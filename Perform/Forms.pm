@@ -19,7 +19,6 @@ sub execute {
   my $focused = $$conf{FOCUSED} || $taborder[0] || undef;
   my %taborder = map {($taborder[$_], $_)} (0..$#taborder); # name look-up
   my ($i, $obj, $key, $oderived, $dwh, $cwh);
-  $$conf{'REDRAW'} = 0;
 
   # Create the window if this is not a derived window
   unless ($$conf{DERIVED}) {
@@ -80,23 +79,11 @@ sub execute {
       return 0;
     }
 
-    # Draw the form if needed
-    if ($$conf{REDRAW}){
-	$self->draw($mwh, 1);
-	$$conf{REDRAW} = 0;
-    }
+    # Draw the form  (not)
+    #$self->draw($mwh, 1);
 
     # Call the OnEnter routine if present
     &{$obj->{OnEnter}}($self) if defined $obj->{OnEnter};
-    {
-	my $newfocus = $$conf{FOCUSED};
-	if ($newfocus ne $focused) {
-	    #  Whoa!  Focus warp.  DON'T EXECUTE THE FIELD.
-	    $i = $taborder{$newfocus};
-	    $focused = $newfocus;
-	    next;
-	}
-    }
 
     # Execute
     $key = $obj->execute($cwh);
@@ -109,17 +96,15 @@ sub execute {
     # Exit if specified
     last if $$conf{EXIT};
 
-    {
-	my $newfocus = $$conf{FOCUSED};
-	if ($newfocus ne $focused) {
-	    #  Whoa!  Focus warp.
-	    $i = $taborder{$newfocus};
-	    $focused = $newfocus;
-	}
-	# Otherwise, move the focus where appropriate
-	elsif (!$$conf{DONTSWITCH}) {
-	    $i += $key eq KEY_STAB ? -1 : 1;
-	}
+    my $newfocus = $$conf{FOCUSED};
+    if ($newfocus ne $focused) {
+	#  Whoa!  Focus warp.
+	$i = $taborder{$newfocus};
+	$focused = $newfocus;
+    }
+    # Otherwise, move the focus where appropriate
+    elsif (!$$conf{DONTSWITCH}) {
+      $i += $key eq KEY_STAB ? -1 : 1;
     }
     $$conf{DONTSWITCH} = 0;
     $i = 0 if $i > $#taborder;

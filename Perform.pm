@@ -19,7 +19,7 @@ use DBIx::Perform::Widgets::ButtonSet;
 
 use base 'Exporter';
 
-our $VERSION = 0.01;
+our $VERSION = '0.04';
 
 use vars qw(@EXPORT_OK %FORM %APP
 	    $APP $FORM $DB $NO_MORE_ROWS);
@@ -27,6 +27,9 @@ use vars qw(@EXPORT_OK %FORM %APP
 $NO_MORE_ROWS = "No more rows in the direction you are going.";
 
 @EXPORT_OK = qw(run);
+
+our %INSERT_RECALL = (Pg => \&Pg_refetch,
+			);
 
 %FORM =
     (TABORDER	=> ['Buttons', 'DBForm'],
@@ -182,7 +185,7 @@ sub curses_formdefs
 	    $w->{'OnEnter'} = sub{ $APP->statusbar($comments); }
 	      if ($comments);
 	    $w->{'FOCUSSWITCH'} = "\t\n\cp\cw\cc\ck\c[";
-	    $w->{'FOCUSSWITCH_MACROKEYS'} = [KEY_UP, KEY_DOWN, KEY_DC];
+	    $w->{'FOCUSSWITCH_MACROKEYS'} = [KEY_UP, KEY_DOWN];
 	    my $color = $fattrs->{'COLOR'}  || $deffldbg;
 	    $w->{'BACKGROUND'} = $color;
 	    if ($color eq $appbg) {
@@ -387,7 +390,7 @@ sub querymode
     $subform->setField('TABORDER', $to);
     $subform->setField('FOCUSED', $to->[0]); # first field.
     $subform->setField('editmode', 'query');
-    $APP->statusbar("Enter fields to query.  ESC queries, DEL cancels.");
+    $APP->statusbar("Enter fields to query.  ESC queries, Ctrl-C cancels.");
     # go ahead and switch to the form.
 }
 
@@ -524,7 +527,7 @@ sub do_prev
 	$form->getWidget('Buttons')->setField('VALUE', $newbtn);
     }
     else {
-	--$ROWNUM;
+	$display_rownum = --$ROWNUM;
     }
     display_row_fields($form, $ROWS[$ROWNUM], $display_rownum);
 }
@@ -549,7 +552,7 @@ sub addmode
 	    if uc($v) eq 'TODAY';
 	$subform->getWidget($f)->setField('VALUE', $v);
     }
-    $APP->statusbar("Enter row to add.  ESC stores; DEL cancels the add.");
+    $APP->statusbar("Enter row to add.  ESC stores; Ctrl-C cancels the add.");
 }
 
 # called from button_push with the top-level form.
@@ -565,6 +568,7 @@ sub updatemode
     foreach my $f (@$fields) {
 	my $w = $subform->getWidget($f);
 	my $col = $attrs->{$f}[0][0][1];
+	next unless $col;	# might be a lookup destination field
 	$w->setField('savevalue', $row->{$col});
     }
     # go ahead and switch to form.
@@ -572,7 +576,7 @@ sub updatemode
     $subform->setField('TABORDER', $to);
     $subform->setField('FOCUSED', $to->[0]); # first field.
     $subform->setField('editmode', 'update');
-    $APP->statusbar("Update the row.  ESC stores; DEL cancels the update.");
+    $APP->statusbar("Update the row.  ESC stores; Ctrl-C cancels the update.");
 }
 
 sub edit_control		# Needs to be generalized to more events.
@@ -585,7 +589,7 @@ sub edit_control		# Needs to be generalized to more events.
     my $controls = $instrs->{'CONTROLS'};
     my $attrs = $subform->getField('attrs');
     my ($fldtblcols, $fldattrs) = @{$attrs->{$field}};
-    my @cols = map { $_->[1] } @$fldtblcols;
+    my @cols = map { $#$_ >= 1 ? $_->[1] : () } @$fldtblcols;
     my $emode = $subform->getField('editmode');
     my $event = "edit$emode";
     my @actions = map {$controls->{$_}{$event}{$when}} @cols;
@@ -618,6 +622,34 @@ sub edit_control		# Needs to be generalized to more events.
 	    $subform->setField('REDRAW', 1);
 	    # $APP->redraw();
 	}
+    }
+}
+
+sub perform_field_lookup
+{
+    my $field = shift;
+    my $subform = shift;
+
+    my $attrs = $subform->getField('attrs');
+    my $fattrs = $attrs->{$field}[1];
+    return unless  my $lookup = $fattrs->{'LOOKUP'};
+    my ($destfield, $lcol, $star, $ltable, $jcol) = @$lookup;
+    my $widg = $subform->getWidget($destfield);
+    $APP->statusbar("No field '$destfield' found, processing LOOKUP attribute"), return
+	unless $widg;
+    my $valuewidg = $subform->getWidget($field);
+    my $value = $valuewidg->getField('VALUE');
+    return unless defined($value); # ignore undef'd join value.
+    my $query = "select $lcol from $ltable where $jcol = '$value'";
+    my @row = $DB->selectrow_array($query);
+    if (@row) {
+	$widg->setField('VALUE', $row[0]);
+    }
+    else {
+	my $errstr = $DBI::errstr;
+	$widg->setField('VALUE', undef);
+	$APP->statusbar("Database Error In LOOKUP: $errstr")
+	    if $errstr;
     }
 }
     
@@ -658,13 +690,15 @@ sub do_remove
     ## FIX_ME!  Do a two-table remove if necessary.
     {  # this block to be a loop someday
 	foreach my $f (@$fields) {
-	    my $fieldspec = $subform->getField('attrs')->{$f}[0];
-	    my ($tbl, $col) = @$fieldspec[0,1];
-	    next if $tbl ne $table;
-	    # my $v = $subform->getWidget($f)->getField('VALUE');
-	    my $v = $$row{$col}; # get value straight from source.
-	    push (@wheres, defined($v) ? "$col = ?" : "$col is null");
-	    push (@values, $v) if defined($v);
+	    my $fieldspecs = $subform->getField('attrs')->{$f}[0];
+	    foreach my $fs_n (@$fieldspecs) {
+		my ($tbl, $col) = @$fs_n[0,1];
+		next if $tbl ne $table;
+		# my $v = $subform->getWidget($f)->getField('VALUE');
+		my $v = $$row{$col}; # get value straight from source.
+		push (@wheres, defined($v) ? "$col = ?" : "$col is null");
+		push (@values, $v) if defined($v);
+	    }
 	}
 	my $wheres = join ' and ', @wheres;
 	my $cmd = "delete from $table where $wheres";
@@ -706,6 +740,7 @@ sub OnFieldExit
 
     my $widget = $form->getWidget($field);
     edit_control($field, $form, 'after'); # do any AFTER control blocks.
+    perform_field_lookup($field, $form); # do a LOOKUP if field so declared.
     if ($key eq "\t" || $key eq "\n"
 	       || $key eq KEY_DOWN) {	# shift to next field
 	$APP->statusbar("")	# erase our comments
@@ -734,11 +769,7 @@ sub OnFieldExit
     elsif ($key eq "\cp") {
 	$APP->statusbar("Current-Value-Of-This-Row not working yet");
     }
-    elsif ($key eq "\cc") {
-	# FIX_ME not working?!
-	clear_textfields($form);
-    }
-    elsif ($key eq KEY_DC) {	# DEL
+    elsif ($key eq "\cC") {	# Ctrl-C
 	# Bailing out of Query, Update or Modify.
 	# Re-display the row as it was, if any.
 	if ($#ROWS >= 0) {
@@ -817,15 +848,20 @@ sub do_query
     }
     my @wheres = ();
     my @vals = ();
+    my %tbls = ();
     foreach my $f (@{$subform->getField('fields')}) {
 	my ($fldtblcols, $fldattrs) = @{$attrs->{$f}};
+	next unless $fldtblcols;  # might be a lookup destination field.
 	my @fldtblcols = @$fldtblcols;
 	next if $masters &&
 	    ! grep { $fldtblcols[$_]->[0] eq $table } 0..$#fldtblcols;
+	next unless $fldtblcols[0];
 	my ($tbl, $col) = @{$fldtblcols[0]};
+	$tbls{$tbl} = 1;
 	if (! $masters  &&  $#fldtblcols > 0) {
 	    my ($tbl2, $col2) = @{$fldtblcols[1]}; # FIX_ME two tables only
 	    push (@wheres, "$tbl.$col = $tbl2.$col2");
+	    $tbls{$tbl2} = 1;
 	}
 	my $val = $subform->getWidget($f)->getField('VALUE');
 	next if ($val eq '');
@@ -861,7 +897,8 @@ sub do_query
 	push (@wheres, $where);
 	push (@vals, $cval) if defined($cval);
     }
-    my $tables = $masters ? $table : join ', ', @tables;
+    # my $tables = $masters ? $table : join ', ', @tables;
+    my $tables = join(', ', keys %tbls);
     my $n = do_query_internal($tables, \@wheres, \@vals);
     $subform->setField('EXIT', 1); # Focus back to menu if we got this far.
     unless (defined($n)) {
@@ -905,40 +942,75 @@ sub do_add
     my $row = {};
     ## FIX_ME!  Do a two-table add if necessary.
     {  # this block to be a loop someday
+	my %reassemblies;
 	foreach my $f (@$fields) {
 	    my $fieldattrs = $subform->getField('attrs')->{$f};
 	    my ($fieldspecs, $attrs) = @$fieldattrs;
 	    next if $$attrs{'NOENTRY'};	# don't include  in cols/vals.
 	    my $fieldspec = $$fieldspecs[0];
-	    my ($tbl, $col) = @$fieldspec[0,1];
+	    next if !defined($fieldspec) || ref($fieldspec) ne 'ARRAY';
+	    my ($tbl, $col, $vfy, $subfield) = @$fieldspec;
 	    next if $tbl ne $table;
 	    my $v = $subform->getWidget($f)->getField('VALUE');
-	    undef $v if $v eq ''; # give NULL for empty fields.
+	    #  undef $v if $v eq ''; # give NULL for empty fields.
+	    next if $v eq '';	# skip empty fields.
 	    return		# function below has side-effects on form.
 		unless validate_contents($subform, $f, $attrs, $v);
-	    push (@cols, $col);
-	    push (@values, $v);
-	    $$row{$col} = $v;
+	    if ($subfield) {
+		push (@{$reassemblies{"$tbl.$col"}},
+		      [ @$fieldspec, $v ]);
+	    }
+	    else {
+		push (@cols, $col);
+		push (@values, $v);
+		$$row{$col} = $v;
+	    }
+	}
+	foreach my $rak (keys %reassemblies) {
+	    my $value='';
+	    my @subfields = sort { $a->[3][0] <=> $b->[3][0] } @{$reassemblies{$rak}};
+	    my $col = $subfields[0]->[1];
+	    foreach my $sf (@subfields) {
+		if (defined($$sf[4])) {
+		    my ($start,$end) = @{$$sf[3]};
+		    my $pos = $start - 1;
+		    my $len = $end - $start + 1;
+		    $value .= " " x ($pos - length($value))
+			if ($pos > length($value));
+		    substr($value, $pos, $len) = $$sf[4];
+		}
+	    }
+	    $$row{$col} = $value;
+	    push(@cols, $col);
+	    push(@values, $value);
 	}
 	my $holders = join ', ', map { "?" } @cols;
 	my $cols = join ', ', @cols;
 	my $cmd = "insert into $table ($cols) values ($holders)";
-	my $rc = $DB->do($cmd, {}, @values);
+	my $sth = $DB->prepare($cmd);
+	my $rc = $sth->execute(@values);
 	if (!defined $rc) {
 	    $APP->statusbar("Database error: $DBI::errstr");
 	    return;
 	}
-	else {
-	    $APP->statusbar("Row Added.");
+	my $refetcher = $INSERT_RECALL{$DB->{'Driver'}->{'Name'}}
+	|| \&Default_refetch;
+	if ($refetcher) {
+	    my $rrow = &$refetcher($sth, $table, \@cols, \@values);
+	    #  push (@ROWS, $rrow);   # Should do this someday
+	    # do_next($FORM, 'switch');
+	    $row = $rrow;
 	}
+	$APP->statusbar("Row Added.");
     }
     $subform->setField('EXIT', 1);	# back to menu
     # Pretend it's a result of one row, so it can be removed / modified.
     clear_STH();
     @ROWS = ( $row );
-    $ROWNUM = 0;
+    $ROWNUM = -1;
     $STH = {};
     $STHDONE = 1;
+    do_next($FORM, 'switch');
 }
 
 sub do_update
@@ -956,22 +1028,52 @@ sub do_update
     my $attrs = $subform->getField('attrs');
     ## FIX_ME!  Do a two-table add if necessary.
     {  # this block to be a loop someday
+	my %reassemblies;
 	foreach my $f (@$fields) {
-	    my ($fieldspec, $attrs) = @{$attrs->{$f}};
-	    my ($tbl, $col) = @{$$fieldspec[0]};
-	    next if $tbl ne $table;
-	    my $w = $subform->getWidget($f);
-	    my $v = $w->getField('VALUE');
-	    undef $v if $v eq ''; # empty field means NULL.
-	    return
-		unless validate_contents($subform, $f, $attrs, $v);
-	    my $sv = $w->getField('savevalue');
-	    $$row{$col} = $v;
-	    $upds{$col} = $v
-		if ($v ne $sv  && !$$attrs{'NOUPDATE'});
-	    $wheres{$col} = $sv;
+	    my ($fieldspecs, $attrs) = @{$attrs->{$f}};
+	    foreach my $fs_n (@$fieldspecs) {
+		my ($tbl, $col, $vfy, $subfield) = @$fs_n;
+		next unless $tbl;
+		next if $tbl ne $table;
+		my $w = $subform->getWidget($f);
+		my $v = $w->getField('VALUE');
+		undef $v if $v eq ''; # empty field means NULL.
+		return
+		    unless validate_contents($subform, $f, $attrs, $v);
+		if ($subfield) {
+		    push (@{$reassemblies{"$tbl.$col"}},
+			  [ @$fs_n, $v ]);
+		}
+		my $sv = $w->getField('savevalue');
+		$$row{$col} = $v;
+		$upds{$col} = $v
+		    if (((defined($v) ne defined($sv))  ||
+			 (defined ($v) && defined($sv) && $v ne $sv))
+			&& !$$attrs{'NOUPDATE'});
+		$wheres{$col} = $sv;
+	    }
+	}
+	foreach my $rak (keys %reassemblies) {
+	    my $value='';
+	    my @subfields = sort { $a->[3][0] <=> $b->[3][0] } @{$reassemblies{$rak}};
+	    my $col = $subfields[0]->[1];
+	    foreach my $sf (@subfields) {
+		if (defined($$sf[4])) {
+		    my ($start,$end) = @{$$sf[3]};
+		    my $pos = $start - 1;
+		    my $len = $end - $start + 1;
+		    $value .= " " x ($pos - length($value))
+			if ($pos > length($value));
+		    substr($value, $pos, $len) = $$sf[4];
+		}
+	    }
+	    $upds{$col} = $value;
 	}
 	my @updcols = keys (%upds);
+	if (@updcols == 0) {
+	    $APP->statusbar("No fields changed.");
+	    return;
+	}
 	my @updvals = map { $upds{$_} } @updcols;
 	my $sets = join(', ', map { "$_ = ?" } @updcols);
 	my @wherecols = keys (%wheres);
@@ -1015,8 +1117,18 @@ sub display_row_fields
     my $attrs = $subform->getField('attrs');
     foreach my $f (@$fields) {
 	my $attr = $attrs->{$f}[0][0];
-	my ($tbl, $col, $stuff) = @$attr;
-	$subform->getWidget($f)->setField('VALUE', $row->{$col});
+	next unless $attr;	# might be a lookup destination 
+	my ($tbl, $col, $stuff, $subfield) = @$attr;
+	next unless $col;
+	my $val = $row->{$col};
+	if ($subfield) {
+	    my ($start, $end) = @$subfield;
+	    $val = length($val) < $start ? '' :
+		substr($val, $start-1, $end-$start+1);
+	}
+	$subform->getWidget($f)->setField('VALUE', $val);
+	perform_field_lookup($f, $subform)
+	    if ($attrs->{$f}[1]{'LOOKUP'});
     }
     $APP->statusbar("Row number $n")
 	if (defined($n));
@@ -1024,7 +1136,34 @@ sub display_row_fields
 }
 
 
-# What a kludge...
+#  Post-Add/Update refetch functions:
+sub Pg_refetch
+{
+    my $sth = shift;
+    my $table = shift;
+
+    my $oid = $sth->{'pg_oid_status'};
+    my $row = $DB->selectrow_hashref("select * from $table where oid='$oid'");
+    return $row;
+}
+
+# When we don't know how to get the row-ID or similar marker, just query
+# on all the values we know...
+sub Default_refetch
+{
+    my $sth = shift;		# statement handle; ignored.
+    my $table = shift;
+    my $cols = shift;		# columns to query
+    my $vals = shift;		# values to query
+
+    my $wheres = join ' AND ', map { "$_ = ?" } @$cols;
+    my $query = "SELECT * FROM $table WHERE $wheres";
+    my $row = $DB->selectrow_hashref($query, {}, @$vals);
+    return $row;
+}
+
+
+# What a kludge...  required by Curses::Application
 package main;
 __DATA__
 %forms = ( DummyDef => {} );
@@ -1043,9 +1182,9 @@ On the shell command line:
 
 export DB_CLASS=[Pg|mysql|whatever] DB_USER=usename DB_PASSWORD=pwd
 
-[$install-path/]generate dbname tablename  > per-file-name.per
+[$install-bin-path/]generate dbname tablename  > per-file-name.per
 
-[$install-path/]perform per-file-name.per  (or pps-file-name.pps)
+[$install-bin-path/]perform per-file-name.per  (or pps-file-name.pps)
 
 =back
 
@@ -1067,8 +1206,9 @@ and update utility.
 The filename given to the I<perform> command may be a Perform
 specification (.per) file.  The call to the I<run> function may be a
 filename of a .per file or of a file pre-digested by the
-DBIx::Perform::DigestPer class (extension .pps).  [Using pre-digested
-files does not appreciably speed things up, so this feature is not highly recommended.]
+DBIx::Perform::DigestPer class (extension .pps).  [Using
+pre-digested files does not appreciably speed things up, so this
+feature is not highly recommended.]
 
 The argument to the I<run> function may also be a string holding the
 contents of a .per or .pps file, or a hash ref with the contents of a
@@ -1095,11 +1235,11 @@ The first letter of each item on the button menu can be pressed.
 Q = query.  Enter values to match in fields to match.  Field values
 	may start with >, >=, <, <=, contain val1:val2 or val1|val2
 	or end with * (for wildcard suffix).  Value of the "=" sign 
-	matches a null value.  The ESC key queries; DEL key aborts.
+	matches a null value.  The ESC key queries; Ctrl-C aborts.
 
-A = add.  Enter values for the row to add.  ESC/DEL when done.
+A = add.  Enter values for the row to add.  ESC or Ctrl-C when done.
 
-U = update.  Edit row values.  ESC/DEL when done.  
+U = update.  Edit row values.  ESC or Ctrl-C when done.  
 
 R = remove.  NO CONFIRMATION!  BE CAREFUL USING THIS!
 
@@ -1114,6 +1254,9 @@ M / D = Master / Detail screen when a MASTER OF relationship exists between
 Curses Curses::Application Curses::Forms Curses::Widgets
 
 DBI  and DBD::whatever
+
+Note: For the B<generate> function / script to work, the DBD driver
+must implement the I<column_info> method.
 
 =head1   ENVIRONMENT VARIABLES
 
@@ -1146,12 +1289,15 @@ http://www.tcomeng.com/ .  (do I sound like Frank Tavares yet?)
 
 Eric C. Weaver  E<lt>weav@sigma.netE<gt> 
 
-=head1 COPYRIGHT AND LICENSE
+=head1 COPYRIGHT AND LICENSE and other legal stuff
 
 Copyright 2003 by Eric C. Weaver and 
 Telecom Engineering Associates (a California corporation).
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself. 
+
+INFORMIX and probably PERFORM is/are trademark(s) of
+IBM these days.
 
 =cut

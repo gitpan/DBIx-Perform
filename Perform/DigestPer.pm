@@ -7,7 +7,7 @@ writing to a file or just eval'ing.
 
 =head1 MODULE VERSION
 
-0.0.1
+0.04
 
 =head1 SYNOPSIS
 
@@ -55,7 +55,7 @@ use vars qw(@EXPORT_OK $VERSION %HEADING_WORDS);
 BEGIN
 {
     @EXPORT_OK = qw(digest digest_file);
-    $VERSION = '0.0.2';
+    $VERSION = '0.04';
 
     %HEADING_WORDS =
 	map { ($_, 1) } qw(screen tables attributes instructions end);
@@ -72,6 +72,7 @@ descriptor.
 
 =cut
 
+our $TABLES;
 
 sub digest			#
 {
@@ -82,6 +83,7 @@ sub digest			#
     my $word;
     my ($db, $tables, $atts, $instrs);
     my $screens = [];
+    local $TABLES;		# for attributes parser to check
     while ($word = $parser->readword('true')) {
 	if ($word eq 'database') {
 	    $db = read_database($parser);
@@ -90,7 +92,7 @@ sub digest			#
 	    push (@$screens, read_screen($parser)); # might return many
 	}
 	elsif ($word eq 'tables') {
-	    $tables = read_tables($parser);
+	    $TABLES = $tables = read_tables($parser);
 	}
 	elsif ($word eq 'attributes') {
 	    $atts = read_attributes($parser);
@@ -146,7 +148,7 @@ sub read_screen
 		}
 		while ($line =~ /(\[\s*(\w+)\s*\]|([^\s\[]+\s?)+)/g) {
 		    my $pre = $`;
-		    my $post = $';
+		    my $post = $'; #'
 		    my $match = $1;
 		    my $id = $2;
 		    if ($page_split) {
@@ -162,7 +164,7 @@ sub read_screen
 		    undef $last_line_blank;
 		    my $x = length($pre);  # + $pos
 		    if ($id) {
-			# it's a field
+			# it\'s a field
 			my $cols = length($match) - 2;
 			if (0) {
 			    #  Leading bracket
@@ -187,7 +189,7 @@ sub read_screen
 			push (@fields, $id);
 		    }
 		    else {
-			# it's a label
+			# it\'s a label
 			$match =~ s/\s$//; # ignore trailing whitespace
 			my $cols = length($match);
 			$widgets->{"label_$labelno"} = {
@@ -235,31 +237,51 @@ sub read_attributes
 	chomp $line;
 	$lines .= ' ' . $line;
 	next unless $line =~ /;/;
-	my ($name, $cols, $ignore, $ignore1, $attrs) =
-	    $lines =~ /\s*(\w+)((\s*=\s*\*?\w+\.\w+)+)\s*(\,\s*(.*))?;/;
+	my ($name, $cols, $ignore, $ignore1, $ignore2, $attrs) =
+	    $lines =~ /\s*(\w+)((\s*=\s*\*?\w+\.\w+(\s*\[\d+,\d+\])?)+)\s*(\,\s*(.*))?;/;
 	$attrs = ''
 	    unless defined($attrs);
 	my $collist = [];
 	foreach my $colspec (split /\s*=\s*/, $cols) {
 	    next unless $colspec;
-	    my ($verify, $tbl, $col) = $colspec =~ /(\*)?(\w+)\.(\w+)/;
-	    push @$collist, [$tbl, $col, $verify];
+	    my ($verify, $tbl, $col, $subfield) =
+		$colspec =~ /(\*)?(\w+)\.(\w+)(\s*\[\d+,\d+\])?/;
+	    my $subf;
+	    if ($subfield) {
+		my ($st, $en) = $subfield =~ /\[(\d+),(\d+)\]/;
+		$subf = [$st, $en];
+	    }
+	    push @$collist, [$tbl, $col, $verify, $subf];
 	}
 	my $attrhash = {};
 	while($attrs =~
-	      /\s*(\w+)\s*(=\s*(\w+|\"[^\"]*\"|\((\s*\"[^\"]*\"\s*,?)*\)))?,?/g
+	      /\s*(\w+)\s*((\w+)?\s*=\s*(\"[^\"]*\"|\((\s*\"[^\"]*\"\s*,?)*\)|(\w+)\s+JOINING\s+(\*?)(\w+)\.(\w+)|\w+))?,?/g
 	      ) {
 	    my $atname = uc $1;
-	    my $atval = $3;
-	    $atval =~ s/^\"(.*)\"$/$1/;
-	    $$attrhash{$atname} = defined($atval) ? $atval : 1;
-	    if ($4) {		# list entry
-		# digest list-valued attribute here.
-		if ($atval =~ /^\s*\((\s*\"[^\"]*\",?)*\s*\)\s*$/) {
-		    my @vals = $atval =~ /\"([^\"]*)\"/g;
-		    my $hash = @vals && +{ map { ($_, 1) } @vals };
-		    $$attrhash{"${atname}HASH"} = $hash
-			if $hash;
+	    if (uc($atname) eq 'LOOKUP') {
+		my $lfield = $3;
+		my $lcol = $6;
+		my $star = $7;
+		my $ltable = $8;
+		my $jcol = $9;
+		$$attrhash{$atname} = [$lfield, $lcol, $star, $ltable, $jcol];
+		warn "LOOKUP table $ltable not in tables list"
+		    unless grep {$_ eq $ltable} @$TABLES;
+		#warn "LOOKUP field $lfield not in fields list"
+		#    unless 0;	# FIX ME!  Look up in screens!
+	    }
+	    else {
+		my $atval = $4;
+		$atval =~ s/^\"(.*)\"$/$1/;
+		$$attrhash{$atname} = defined($atval) ? $atval : 1;
+		if ($5) {	# list entry
+		    # digest list-valued attribute here.
+		    if ($atval =~ /^\s*\((\s*\"[^\"]*\",?)*\s*\)\s*$/) {
+			my @vals = $atval =~ /\"([^\"]*)\"/g;
+			my $hash = @vals && +{ map { ($_, 1) } @vals };
+			$$attrhash{"${atname}HASH"} = $hash
+			    if $hash;
+		    }
 		}
 	    }
 	}
@@ -296,7 +318,7 @@ sub read_instructions
 		last if $action =~ /^\s*$/;
 		last INSTRUCTION if $action =~ /^\s*end\s*$/i;
 		my @action;
-		if ((@action = $action =~ /(let)\s+(\w+)\s*=\s*(\w+)\s*(\+)\s*(\w+)/i) ||
+		if ((@action = $action =~ /\s*(let)\s+(\w+)\s*=\s*(\w+)\s*([-+*\/])\s*(\w+)/i) ||
 		    (@action = $action =~ /(nextfield)\s*=\s*(\w+)/i)) {
 		    $action[0] = lc($action[0]);
 		    my $actionref = [ @action ];
@@ -347,7 +369,7 @@ with the same basename but extension .pps unless an output filename
 is explicitly provided.  Calls "digest" in this package to do the
 work.
 
-It's a little clumsy, but one can do a command-line "digestion" by:
+It\'s a little clumsy, but one can do a command-line "digestion" by:
  perl -MDBIx::Perform::DigestPer -e'digest_file "foo.per"' .
 Maybe a top-level Perl or shell script should be made for this purpose.
 
@@ -408,7 +430,7 @@ sub readword
 		if $DBIx::Perform::DigestPer::HEADING_WORDS{lc($word)} &&
 		    lc($word) ne 'end' &&
 			! $accept_header_word;
-	    $self->{'tail'} = $';
+	    $self->{'tail'} = $'; #'
 	    return $word;
 	}
 	$tail = <$ioh>;

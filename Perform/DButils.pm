@@ -4,6 +4,7 @@ use strict;
 use base 'Exporter';
 
 our @EXPORT_OK = qw(&open_db);
+our $VERSION = '0.04';
 
 use DBI;
 
@@ -32,7 +33,8 @@ sub open_db
     }
     my $dbuser = $ENV{DB_USER};
     my $dbpass = $ENV{DB_PASSWORD};
-    my $dbh = DBI->connect($connect_arg, $dbuser, $dbpass)
+    my $dbh = DBI->connect($connect_arg, $dbuser, $dbpass,
+			   {PrintError => 0})
 	or die "Unable to connect to '$connect_arg' as user '$dbuser'";
     return $dbh;
 }
