@@ -125,4 +125,17 @@ sub execute {
   return $key;
 }
 
+# sub drawField
+# {
+#     my $self = shift;
+#     my $fieldname = shift;
+#     my $draw_cursor = shift;
+#     $draw_cursor = 1 unless defined($draw_cursor);
+
+#     my $widg = $self->getWidget($fieldname);
+#     my   $dwh = $self->_canvas($mwh, $self->_geometry);
+    
+#     my $cwh = $self->_canvas($dwh, $self->_cgeometry);
+
+# }
 1;

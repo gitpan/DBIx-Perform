@@ -19,7 +19,7 @@ use DBIx::Perform::Widgets::ButtonSet;
 
 use base 'Exporter';
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 use vars qw(@EXPORT_OK %FORM %APP
 	    $APP $FORM $DB $NO_MORE_ROWS);
@@ -151,9 +151,9 @@ sub curses_formdefs
 	#    [ grep { $$widgets{$_} } @$fields ] ;
 	    $fields;		# may not need this, really.
 	my $add_taborder =	# fields without NOENTRY attribute
-	    [ grep { ! $$attrs{$_}[1]{NOENTRY} } @$subformfields ];
+	    [ grep { my $a = $$attrs{$_}[1]; $a && ! $$a{NOENTRY} } @$subformfields ];
 	my $update_taborder =	# fields without NOUPDATE attribute
-	    [ grep { ! $$attrs{$_}[1]{NOUPDATE} } @$subformfields ];
+	    [ grep { my $a = $$attrs{$_}[1]; $a && ! $$attrs{$_}[1]{NOUPDATE} } @$subformfields ];
 	my $defaults =
 	    +{map { my $d = $$attrs{$_}[1]{DEFAULT};
 		     defined($d) ? ($_, $d) : (); }    @$subformfields };
@@ -651,6 +651,7 @@ sub perform_field_lookup
 	$APP->statusbar("Database Error In LOOKUP: $errstr")
 	    if $errstr;
     }
+    $subform->draw($subform->{MWH}, 1);
 }
     
 sub field_value_or_require_quotes			# single-quote value.
@@ -857,6 +858,7 @@ sub do_query
 	    ! grep { $fldtblcols[$_]->[0] eq $table } 0..$#fldtblcols;
 	next unless $fldtblcols[0];
 	my ($tbl, $col) = @{$fldtblcols[0]};
+	next unless $tbl;
 	$tbls{$tbl} = 1;
 	if (! $masters  &&  $#fldtblcols > 0) {
 	    my ($tbl2, $col2) = @{$fldtblcols[1]}; # FIX_ME two tables only
@@ -953,6 +955,7 @@ sub do_add
 	    next if $tbl ne $table;
 	    my $v = $subform->getWidget($f)->getField('VALUE');
 	    #  undef $v if $v eq ''; # give NULL for empty fields.
+	    $v =~ s/\s*$//;	# lose trailing blanks.
 	    next if $v eq '';	# skip empty fields.
 	    return		# function below has side-effects on form.
 		unless validate_contents($subform, $f, $attrs, $v);
@@ -1037,6 +1040,7 @@ sub do_update
 		next if $tbl ne $table;
 		my $w = $subform->getWidget($f);
 		my $v = $w->getField('VALUE');
+		$v =~ s/\s*$//;	# trim trailing whitespace.
 		undef $v if $v eq ''; # empty field means NULL.
 		return
 		    unless validate_contents($subform, $f, $attrs, $v);
@@ -1050,7 +1054,8 @@ sub do_update
 		    if (((defined($v) ne defined($sv))  ||
 			 (defined ($v) && defined($sv) && $v ne $sv))
 			&& !$$attrs{'NOUPDATE'});
-		$wheres{$col} = $sv;
+		$wheres{$col} = $sv 
+		    if !$$attrs{'NOCOMPARE'}; # not in orig. Perform.
 	    }
 	}
 	foreach my $rak (keys %reassemblies) {
@@ -1085,7 +1090,7 @@ sub do_update
 					"$_ = ?" :
 					    "$_ is null"
 					    } @wherecols);
-	my $cmd = "update $table set $sets where $wheres";
+	my $cmd = "update $table set $sets " . ($wheres && "where $wheres");
 	my $rc = $DB->do($cmd, {}, @updvals, @wherevals);
 	if (!defined $rc) {
 	    $APP->statusbar("Database error: $DBI::errstr");
@@ -1222,7 +1227,10 @@ DB_USER and DB_PASSWORD, respectively.
 Supports the following features of Informix's Perform:
 
  Field Attributes: COLOR, NOENTRY, NOUPDATE, DEFAULT, UPSHIFT, DOWNSHIFT,
-		   INCLUDE, COMMENTS
+		   INCLUDE, COMMENTS, NOCOMPARE.
+	NOCOMPARE is an addition of ours for a hack of updating a
+	sequence's next value in Postgres.  A field marked NOCOMPARE
+	is never included in the WHERE clause in an Update.
 
  2-table Master/Detail  (though no query in detail mode)
 
@@ -1292,7 +1300,7 @@ Eric C. Weaver  E<lt>weav@sigma.netE<gt>
 =head1 COPYRIGHT AND LICENSE and other legal stuff
 
 Copyright 2003 by Eric C. Weaver and 
-Telecom Engineering Associates (a California corporation).
+Daryl D. Jones, Inc. (a California corporation).
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself. 
