@@ -2,7 +2,7 @@ package DBIx::Perform::DButils;
 use strict;
 use base 'Exporter';
 
-our $VERSION   = '0.69';
+our $VERSION   = '0.691';
 our @EXPORT_OK = qw(&open_db);
 
 use DBI;

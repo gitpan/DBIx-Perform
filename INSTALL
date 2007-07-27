@@ -132,8 +132,8 @@ $ sudo make install
 $ cd ..
 
 
-$ tar xzf DBIx-Perform-0.69.tar.gz
-$ cd DBIx-Perform-0.69.tar.gz
+$ tar xjf DBIx-Perform-0.691.tar.bz2
+$ cd DBIx-Perform-0.691.tar.bz2
 $ perl Makefile.pl
 $ make
 $ sudo make install

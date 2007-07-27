@@ -4,7 +4,7 @@ use base 'Exporter';
 use Data::Dumper;
 use DBI;
 
-our $VERSION = '0.69';
+our $VERSION = '0.691';
 
 our @EXPORT_OK = qw(	&new
   &is_empty

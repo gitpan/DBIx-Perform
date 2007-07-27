@@ -6,12 +6,12 @@ use warnings;
 use Curses;
 use Math::Trig;
 use DBIx::Perform::Widgets::ButtonSet;
-use DBIx::Perform::AttributeGrammer;
+use DBIx::Perform::AttributeGrammar;
 use Parse::RecDescent;
 use Data::Dumper;
 use base 'Exporter';
 
-our $VERSION = '0.69';
+our $VERSION = '0.691';
 
 # debug: set (unset) in runtime env
 $::TRACE      = $ENV{TRACE};
@@ -140,7 +140,7 @@ sub parse_line {
 
     my $val = undef;
     $self->{line} = $line;
-    my $grammar = DBIx::Perform::AttributeGrammer::get_grammar;
+    my $grammar = DBIx::Perform::AttributeGrammar::get_grammar;
     my $parser  = Parse::RecDescent->new($grammar);
 
     if ( my $ref = $parser->startrule( uc $line ) ) {

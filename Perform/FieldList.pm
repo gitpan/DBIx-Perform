@@ -8,7 +8,7 @@ use DBIx::Perform::Field;
 use base 'Exporter';
 use DBI;
 
-our $VERSION = '0.69';
+our $VERSION = '0.691';
 
 # debug: set (unset) in runtime env
 $::TRACE      = $ENV{TRACE};

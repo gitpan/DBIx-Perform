@@ -14,7 +14,7 @@ use DBIx::Perform::FieldList;
 use base 'Exporter';
 use Data::Dumper;
 
-our $VERSION = '0.69';    # valtech
+our $VERSION = '0.691';    # valtech
 
 # $UserInterface methods
 our @EXPORT_OK = qw(

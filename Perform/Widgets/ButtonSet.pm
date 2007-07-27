@@ -7,7 +7,7 @@ use Curses;    # for KEY_foo constants.
 use Curses::Widgets;
 use base 'Exporter';
 
-our $VERSION = '0.69';
+our $VERSION = '0.691';
 
 sub _conf {
     my $self  = shift;

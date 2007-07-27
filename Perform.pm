@@ -16,7 +16,7 @@ use DBIx::Perform::Instruct;
 use base 'Exporter';
 use Data::Dumper;
 
-our $VERSION = '0.69';    # valtech: 0.69
+our $VERSION = '0.691';
 
 use vars qw(@EXPORT_OK $DB $STH $STHDONE $MASTER_STH $MASTER_STHDONE );
 

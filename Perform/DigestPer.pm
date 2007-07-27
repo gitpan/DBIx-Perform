@@ -72,7 +72,7 @@ use vars qw(@EXPORT_OK $VERSION %HEADING_WORDS);
 
 BEGIN {
     @EXPORT_OK = qw(digest digest_file convert_per_to_xml convert_per_to_yml );
-    $VERSION   = '0.69';
+    $VERSION   = '0.691';
 
     %HEADING_WORDS =
       map { ( $_, 1 ) } qw(screen tables attributes instructions end);
@@ -98,7 +98,7 @@ descriptor.
 
 =cut
 
-our $VER_DATE = '2007-07-26';
+our $VER_DATE = '2007-07-27';
 
 our $TABLES;
 our $FieldList;

@@ -8,7 +8,7 @@ use base qw(Curses::Forms);
 use Curses;			# for KEY_STAB
 use Carp;
 
-our $VERSION = '0.69';
+our $VERSION = '0.691';
 
 sub temp_generate_taborder
 {

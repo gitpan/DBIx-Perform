@@ -9,7 +9,7 @@
 
 use strict;
 
-our $VERSION = '0.69';
+our $VERSION = '0.691';
 
 our $GlobalUi = $DBIx::Perform::GlobalUi;
 

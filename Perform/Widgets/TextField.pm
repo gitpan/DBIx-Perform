@@ -10,7 +10,7 @@ use constant 'KEY_DEL' => '330';    # dunno why not in Curses.
 
 use 5.6.0;
 
-our $VERSION = '0.69';
+our $VERSION = '0.691';
 
 Curses::define_key( "\c[[Z", KEY_STAB );    # for some reason not recognized.
 

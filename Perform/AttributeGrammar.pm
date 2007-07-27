@@ -1,11 +1,11 @@
-package DBIx::Perform::AttributeGrammer;
+package DBIx::Perform::AttributeGrammar;
 
 use strict;
 use Parse::RecDescent;
 use base 'Exporter';
 use Data::Dumper;
 
-our $VERSION = '0.69';
+our $VERSION = '0.691';
 
 # exported methods
 our @EXPORT_OK = qw( &get_grammar );
