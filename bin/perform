@@ -1,5 +1,5 @@
 #!/usr/bin/perl
 
 use DBIx::Perform 'run';
-run $ARGV[0];
+run $ARGV[0], $ARGV[1];
 

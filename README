@@ -70,3 +70,53 @@ Telecom Engineering Associates (a California corporation).
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself. 
+
+
+=======================================================================
+=======================================================================
+=======================================================================
+DBIx::Perform, version 0.69, 2007 July 26.
+
+Many, many changes and improvements.  And perhaps some regressions too.
+
+Some of the improvements from version 0.05:
+Screen, Table, Master, and Detail buttons are implemented.
+Most of the attributes and instructions now work.
+Query results more closely match the original utility's results.
+
+
+NOT IMPLEMENTED
+View, Output, and Current buttons.
+'!' key.
+Without Null Input in the Database section (p. 2-9).
+Color, Invisible, Verify, Wordwrap, Zerofill attributes.
+Allowing Input in the Displayonly attribute (p. 2-24).
+Delimiters, On Beginning, and On Ending instructions.
+Today, Current, Max, Min, Count, Total, and Average in the Let instruction.
+Datetime and Interval data types (p. 3-11).
+All the returns (lngreturn, floreturn, etc.) except intreturn (p. 6-21).
+pf_gettype external function for use by external C functions (p. 6-23).
+
+DEPENDENCIES
+In addition to those listed above, also need:
+  YAML
+  RecdescentParser
+
+FUNDING CREDIT
+This project was done at:
+
+Valtech
+5080 Spectrum Drive - Suite 700 west
+Addison, Texas 75001
+
+This project was paid by and done for:
+
+Essilor of America
+13515 North Stemmons Freeway
+Dallas, Texas 75234
+
+AUTHORS
+
+  Martin Baer     2007/1/1  -  2007/7/14
+  Brenton Chapin  2007/3/16 -  2007/7/26
+
