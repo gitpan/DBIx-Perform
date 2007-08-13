@@ -102,20 +102,20 @@ sub input_key {
 
     $max   = 80;
     $max   = $fo->{size} if $mode ne 'query';
-    $value = $fo->get_value;
+#    $value = $fo->get_value;
 
     # reinitialize the field if re-entering it with a value at pos 0
     if (
            $pos == 0
-        && defined $value
+        && $value ne ''
         && (   defined $fo->{format}
             || defined $fo->{right}
             || defined $fo->{picture} )
       )
     {
         if ( !defined $self->is_FSKEY($in) ) {
-            $value = undef;
-            $fo->set_value(undef);
+            $value = '';
+            $fo->set_value($value);
         }
     }
 

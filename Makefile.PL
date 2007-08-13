@@ -8,9 +8,7 @@ WriteMakefile
      'VERSION_FROM'	=> 'Perform.pm',	# finds $VERSION
      'PREREQ_PM'	=> +{ DBI => 0,		# e.g., Module::Name => 1.1
 			    Curses::Application => 0},
-#     'EXE_FILES'	=>  [ 'bin/perform', 'bin/pformbld' ],
-     'INST_SCRIPT'      => 'bin',
-     'INSTALLSCRIPT'    => '/usr/local/bin',
+     'EXE_FILES'	=>  [ 'bin/perform', 'bin/pformbld' ],
      ($] >= 5.005 ?		## Add these new keywords supported since 5.005
       (ABSTRACT_FROM => 'Perform.pm', # retrieve abstract from module
        AUTHOR     => 'A. U. Thor <weav@flat5th.palo-alto.ca.us>') : ()),

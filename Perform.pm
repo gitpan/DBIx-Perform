@@ -16,7 +16,7 @@ use DBIx::Perform::Instruct;
 use base 'Exporter';
 use Data::Dumper;
 
-our $VERSION = '0.691';
+our $VERSION = '0.692';
 
 use vars qw(@EXPORT_OK $DB $STH $STHDONE $MASTER_STH $MASTER_STHDONE );
 
@@ -132,10 +132,9 @@ sub clear_table_textfields {
 	    next if $mode eq 'query'				
 	    && !defined $fo->{queryclear}
             && $joins_by_tag->{$tag};
-#            && defined $fo->{dominant_column} # its a join 
 
-#	    next if defined $fo->{dominant_column} # its a join 
-#	    && $mode eq 'add';				
+            next if $mode eq 'add'
+            && $joins_by_tag->{$tag};
 
 	    $fo->set_value('');
 	    $GlobalUi->set_screen_value( $tag, '' );
@@ -197,6 +196,14 @@ sub check_rows_and_advise {
         $form->setField( 'DONTSWITCH', 1 );
         return 1;
     }
+    if (my $row_status = refresh_row(1, 1)) {
+        if ($row_status == 2) {
+            $GlobalUi->display_error('so35.');
+        } else {
+            $GlobalUi->display_error('so34.');
+        }
+        return 1;
+    }
     return undef;
 }
 
@@ -247,8 +254,6 @@ sub goto_screen {
 sub goto_screen1 {
     my $rv = goto_screen('Run0');
 
-    #    my $form = $GlobalUi->{form_object};
-    #    $form->setField('FOCUSED', );
     return $rv;
 }
 
@@ -268,7 +273,8 @@ sub next_screen {
 sub do_screen {
     my $app = $GlobalUi->{app_object};
 
-    $GlobalUi->clear_comment_and_error_display;
+#    $GlobalUi->clear_comment_and_error_display;
+    $GlobalUi->clear_display_comment;
 
     my $cf   = $app->getField('form_name');
     my $form = $app->getForm($cf);
@@ -284,6 +290,59 @@ sub do_screen {
     $form->setField( 'DONTSWITCH', 1 );
 }
 
+sub do_current {
+    refresh_row();
+}
+
+sub refresh_row {
+    my $suppress_msg  = shift;
+    my $test_only     = shift;
+    my $driver        = $DB->{'Driver'}->{'Name'};
+    my $form          = $GlobalUi->{form_object};
+    my $current_table = $GlobalUi->get_current_table_name;
+    my $row;
+    my $sth;
+    $GlobalUi->update_info_message( $form, 'current' );
+    $form->setField( 'DONTSWITCH', 1 );
+
+    my $refetcher = $INSERT_RECALL{$driver} || \&Default_refetch;
+    if ( defined($refetcher) ) {
+        $row =
+          &$refetcher( $sth, $current_table, (), ());
+    }
+    my $changed = 0;
+    if ( defined($row) ) {
+        my $cur_row = $RowList->current_row;
+        foreach my $alias (keys %$row) {
+            my $valdb = $row->{$alias} || '';
+            my $valmem = $cur_row->{$alias} || '';
+            if ($valdb ne $valmem) {
+                $cur_row->{$alias} = $row->{$alias} if !$test_only;
+#warn "diff on $alias\n";
+#warn "$cur_row->{$alias}:\n";
+#warn "$row->{$alias}:\n";
+                $changed = 1;
+            }
+        }
+        return $changed if $test_only;
+        if ($changed) {
+            my $subform = $form->getSubform('DBForm') || $form;
+            display_row( $subform, $cur_row );
+            unless ($suppress_msg) {
+                my $msg = $GlobalUi->{error_messages}->{'ro54.'};
+                $GlobalUi->display_status($msg);
+            }
+        } else {
+            unless ($suppress_msg) {
+                $GlobalUi->clear_display_error;
+            }
+        }
+    } else {
+        $changed = 2;
+    }
+    return $changed;
+}
+
 
 
 # unsupported buttons
@@ -297,17 +356,9 @@ sub do_view {
     return undef;
 }
 
-sub do_current {
-    my $form = $GlobalUi->{form_object};
-    $form->setField( 'DONTSWITCH', 1 );
-    my $m = $GlobalUi->{error_messages}->{'th26d'};
-    $GlobalUi->display_error($m);
-
-    return undef;
-}
-
 sub do_output {
     my $form = $GlobalUi->{form_object};
+    $GlobalUi->update_info_message( $form, 'output' );
     $form->setField( 'DONTSWITCH', 1 );
     $GlobalUi->clear_comment_and_error_display;
     my $m = $GlobalUi->{error_messages}->{'th26d'};
@@ -317,6 +368,39 @@ sub do_output {
 }
 
 # implemented buttons
+
+sub find_best_screen_for_table {
+# On Perform forms that have 2+ tables and 2+ screens,
+# sperform may change screens when the user changes tables.
+# It is not clear what logic sperform uses to pick a screen.
+# It could be "1st screen with a field that is associated with only
+# that table (not joined to any other table)".  Or it could be
+# "screen with the most fields associated with that table".
+# Other heuristics can be devised that produce the same results
+# as observed in sperform.
+    my $ctbl = shift;
+    my %first_scr;
+    my $fl = $GlobalUi->get_field_list;
+    $fl->reset;
+    while (my $fo = $fl->iterate_list) {
+        my ($tag, $tbl, $col) = $fo->get_names;
+        my $scrs = get_screen_from_tag($tag);
+        my $scr = @$scrs[0];
+#warn "$tag  $tbl.$col  $scr\n";
+        if ($tbl eq $ctbl) {
+            if (!defined $first_scr{$tag} || $scr < $first_scr{$tag}) {
+                $first_scr{$tag} = $scr;
+            }
+        } else {
+            $first_scr{$tag} = -1;    
+        }
+    }
+    my $fscr = 9999;
+    foreach my $scr (values %first_scr) {
+        $fscr = $scr if $scr >= 0 && $scr < $fscr;
+    }
+    return $fscr;
+}
 
 sub do_table {
     warn "TRACE: entering do_table\n" if $::TRACE;
@@ -332,6 +416,10 @@ sub do_table {
 
     $GlobalUi->increment_global_tablelist;
     $GlobalUi->increment_global_rowlist;
+
+    my $tbl = $GlobalUi->get_current_table_name;
+    my $scr = find_best_screen_for_table($tbl);
+    goto_screen("Run$scr");
 
     # toggle the brackets around a field on the screen
     $GlobalUi->set_field_bounds_on_screen;
@@ -362,15 +450,13 @@ sub do_yes {
     my $app = $GlobalUi->{app_object};
 
     my %info_msgs = %{ $GlobalUi->{info_messages} };
-    $GlobalUi->update_info_message( $form, $info_msgs{'yes'} );
-    $GlobalUi->clear_comment_and_error_display;
 
-    $app->draw();
     do_remove( $key, $form );
 
-   #FIX: change focus returns to an arbitrary button and breaks on other buttons
     $GlobalUi->change_focus_to_button( $form, 'perform' );
-    $GlobalUi->update_info_message( $form, $info_msgs{'query'} );
+    $GlobalUi->update_info_message( $form, 'remove' );
+    my $wid    = $form->getWidget('ModeButtons');
+    $wid->setField('VALUE', 6);
 }
 
 sub do_no {
@@ -380,12 +466,10 @@ sub do_no {
     my $app       = $GlobalUi->{app_object};
     my %info_msgs = %{ $GlobalUi->{info_messages} };
 
-    $GlobalUi->update_info_message( $form, $info_msgs{'no'} );
-    $app->draw();
-
-   #FIX: change focus returns to an arbitrary button and breaks on other buttons
     $GlobalUi->change_focus_to_button( $form, 'perform' );
-    $GlobalUi->update_info_message( $form, $info_msgs{'next'} );
+    $GlobalUi->update_info_message( $form, 'remove' );
+    my $wid    = $form->getWidget('ModeButtons');
+    $wid->setField('VALUE', 6);  #'6' is the "Remove" button
 }
 
 # called from button_push with the top-level form.
@@ -470,6 +554,10 @@ sub do_master {
     if ( $ct eq $detail ) {       # switch to master from detail
         if ( my $tb = $GlobalUi->go_to_table($master) ) {
 
+            my $tbl = $GlobalUi->get_current_table_name;
+            my $scr = find_best_screen_for_table($tbl);
+            goto_screen("Run$scr");
+
             $GlobalUi->update_info_message( $form, 'master' );
             $GlobalUi->clear_comment_and_error_display;
             $form->setField( 'DONTSWITCH', 1 );
@@ -527,6 +615,10 @@ sub do_detail {
     if ( $ct eq $master ) {       # switch to detail from master
         if ( my $tb = $GlobalUi->go_to_table($detail) ) {
 
+            my $tbl = $GlobalUi->get_current_table_name;
+            my $scr = find_best_screen_for_table($tbl);
+            goto_screen("Run$scr");
+
             $GlobalUi->update_info_message( $form, 'master' );
             $GlobalUi->clear_comment_and_error_display;
             $form->setField( 'DONTSWITCH', 1 );
@@ -538,7 +630,7 @@ sub do_detail {
 #            display_row( $form, $RowList->current_row );
 
             clear_detail_textfields($master, $detail);
-            do_query( "nop", "nop", $subform );
+            do_query;
 
             warn "TRACE: leaving do_detail\n" if $::TRACE;
             return;
@@ -587,7 +679,13 @@ sub do_previous {
     my $row = $RowList->previous_row($distance);
     display_row( $form, $row );
 
-    return $row;
+    if (my $row_status = refresh_row(1, 1)) {
+        if ($row_status == 2) {
+            $GlobalUi->display_error('so35.');
+        } else {
+            $GlobalUi->display_error('so34.');
+        }
+    }
 }
 
 sub do_next {
@@ -624,7 +722,13 @@ sub do_next {
     my $row = $RowList->next_row($distance);
     display_row( $form, $row );
 
-    return $row;
+    if (my $row_status = refresh_row(1, 1)) {
+        if ($row_status == 2) {
+            $GlobalUi->display_error('so35.');
+        } else {
+            $GlobalUi->display_error('so34.');
+        }
+    }
 }
 
 sub addmode {
@@ -641,7 +745,6 @@ sub addmode {
     $fl->display_defaults_to_screen($GlobalUi);
 
     warn "TRACE: leaving addmode\n" if $::TRACE;
-    return undef;
 }
 
 sub addmode_resume {
@@ -694,17 +797,7 @@ sub removemode {
     $form->setField( 'DONTSWITCH', 1 );
     $GlobalUi->clear_comment_and_error_display;
 
-    if ( $RowList->is_empty ) {
-
-        #my $m  = $err_msgs{'th15.'};
-        #$GlobalUi->display_error($m);
-        $GlobalUi->display_error( $err_msgs{'th15.'} );
-        return;
-    }
-    if ($app->{deletedrow}) {
-        $GlobalUi->display_error('th47w');
-        return;
-    }
+    return if check_rows_and_advise($form);
 
     #'before remove' only works on tables.  Don't believe it makes any
     # sense to trigger off a column-- the smallest element that can be
@@ -713,8 +806,10 @@ sub removemode {
     my $actkey = trigger_ctrl_blk( 'before', 'remove', $table );
     return if $actkey eq "\cC";
 
-    $GlobalUi->update_info_message( $form, $info_msgs{'no'} );
     $GlobalUi->switch_buttons( $form, 'REMOVE', @buttons );
+    $GlobalUi->update_info_message( $form, 'yes' );
+    my $wid    = $form->getWidget('ModeButtons');
+    $wid->setField('VALUE', 0);
 }
 
 sub do_remove {
@@ -726,6 +821,7 @@ sub do_remove {
 
     my $app  = $GlobalUi->{app_object};
     my $form = $GlobalUi->get_current_form;
+    $GlobalUi->update_info_message( $form, 'remove' );
 
     return if check_rows_and_advise($form);
 
@@ -753,7 +849,7 @@ sub do_remove {
         $GlobalUi->display_error($m2);
     }
     else {
-        my $msg = "Row removed.";
+        $GlobalUi->display_status('ro8d');
         $RowList->remove_row;
         clear_textfields();
         $app->{deletedrow} = 1;
@@ -761,6 +857,7 @@ sub do_remove {
     trigger_ctrl_blk( 'after', 'remove', $table );
     $form->setField( 'DONTSWITCH', 1 );    # in all cases.
 
+    $GlobalUi->change_mode_display( $subform, 'perform' );
     warn "TRACE: exiting do_remove\n" if $::TRACE;
 }
 
@@ -822,6 +919,7 @@ sub OnFieldExit {
         my ( $pos, $rc );
 #warn "ctrl-p: $tag = $val\n";
         ( $val, $pos, $rc ) = $fo->format_value_for_display( $val, 0 );
+        $fo->set_value($val);
         $GlobalUi->set_screen_value( $tag, $val );
     }
 
@@ -1413,13 +1511,17 @@ sub prepend_table_name {
     return %tncs;
 }
 
+our $stmptn = 1;             #temp table number, for queries
+our $stmptlun = 1;           #temp table number for lookups, for queries
+
 #sub do_query_take7 {
 sub do_query {
-    my ( $field, $widget, $subform ) = @_;
+#    my ( $field, $widget, $subform ) = @_;
+    my $form    = $GlobalUi->get_current_form;
+    my $subform = $form->getSubform('DBForm') || $form;
     my $TMPTBL       = "pf_tmp";
-    my $tmptn = 1;                              #temp table number
-    my $tmptlun = 0;                    #temp table number for lookups
     my (%tbl_visit, %tbl_prev_visit, %tbl_cur_visit, %tbl_next_visit);
+    my ($tmptn, $tmptlun) = ($stmptn, $stmptlun);
     my $more;
     my $current_tbl = $GlobalUi->get_current_table_name;
     my $app         = $GlobalUi->{app_object};
@@ -1550,7 +1652,6 @@ warn "$query;\n" if $::TRACE;
 # table has been joined in a previous lookup, therefore make a query
 # into a separate temporary table, and join that temporary table.
                                my $aliaslu2 = $aliases->{"$lutbl.$lucol2"};
-                               $tmptlun++;
                                $query = "select\n$lucol $aliaslu"
                                       . ", $lucol2 $aliaslu2"
                                       . "\nfrom $lutbl into temp "
@@ -1567,6 +1668,7 @@ warn "$query;\n" if $::TRACE;
                                    "${TMPTBL}lu$tmptlun.$aliaslu $aliaslu";
                                $wheres2{"${TMPTBL}lu$tmptlun.rowid"
                                        . " = $TMPTBL$tn.zlu$tmptlun"} = 1;
+                               $tmptlun++;
                            }
                        }
                    }
@@ -1686,20 +1788,21 @@ warn "values for 1st query:\n" . join ("\n", @vals) . "\n" if $::TRACE;
             last;
         }
     }
-    
+
+    my $size;
     if (@vals && $#queries == 0) {
-        execute_query( $subform, $queries[$#queries], \@vals );
+        $size = execute_query( $subform, $queries[$#queries], \@vals );
     } else {
-        execute_query( $subform, $queries[$#queries] );
+        $size = execute_query( $subform, $queries[$#queries] );
     }
 
 # drop temporary tables
     my @drops;
-    while ($tn > 0) {
+    while ($tn >= $tmptn) {
         push @drops, "drop table $TMPTBL$tn";
         $tn--;
     }
-    for (my $i = $tmptlun; $i > 0; $i--) {
+    for (my $i = $tmptlun; $i >= $stmptlun ; $i--) {
         push @drops, "drop table ${TMPTBL}lu$i";
     }
 
@@ -1713,7 +1816,11 @@ warn "values for 1st query:\n" . join ("\n", @vals) . "\n" if $::TRACE;
 #        }
     } 
 
+    $stmptn = $tmptn;
+    $stmptlun = $tmptlun;
+
     $GlobalUi->display_error($errmsg) if $errmsg;
+warn "leaving do_query\n" if $::TRACE;
 }
 
 =pod
@@ -2039,6 +2146,7 @@ sub execute_query {
     my $current_table = $GlobalUi->get_current_table_name;
     my $err           = $GlobalUi->{error_messages};
 
+warn "entering execute_query\n" if $::TRACE;
     $GlobalUi->display_status( $err->{'se10.'} );
 
 #warn Data::Dumper->Dump([$vals], ['vals']);
@@ -2064,7 +2172,8 @@ sub execute_query {
     # change focus to the user interface
     $GlobalUi->change_mode_display( $subform, 'perform' );
 
-    warn "TRACE: leaving do_query\n" if $::TRACE;
+    warn "TRACE: leaving execute_query\n" if $::TRACE;
+    return  $size;
 }
 
 =pod
@@ -2479,8 +2588,9 @@ sub do_add {
     my $refetcher = $INSERT_RECALL{$driver} || \&Default_refetch;
     if ( defined($refetcher) ) {
         $row =
-          &$refetcher( $sth, $current_table, \@ca, \@values, $serial_col,
-            $serial_val );
+          &$refetcher( $sth, $current_table );
+#          &$refetcher( $sth, $current_table, \@ca, \@values, $serial_col,
+#            $serial_val );
     }
     if ( defined($row) ) {
         $RowList->add_row($row);
@@ -2511,7 +2621,7 @@ sub do_update {
     my $form      = $GlobalUi->{form_object};
     my $fl        = $GlobalUi->get_field_list;
     my $table     = $GlobalUi->get_current_table_name;
-    my $singleton = undef;
+#    my $singleton = undef;
 
     my %wheres = ();
     my %upds   = ();
@@ -2526,6 +2636,8 @@ sub do_update {
     $GlobalUi->change_mode_display( $form, 'update' );
     $GlobalUi->update_subform($subform);
 
+    my %vals;
+    my %sstags;
     $fl->reset;
     while ( my $fo = $fl->iterate_list ) {
         my ( $tag, $tbl, $col ) = $fo->get_names;
@@ -2536,7 +2648,7 @@ sub do_update {
 
         my $tnc   = "$tbl.$col";
         my $alias = $aliases->{$tnc};
-        next unless $cur_row->{$alias};
+        next unless defined $cur_row->{$alias};
 
         # get value from field
         my $v  = $fo->get_value;
@@ -2547,14 +2659,21 @@ sub do_update {
 #        my $rc = $fo->validate_input( $v, 'update' );
 #        return if $rc != 0;
 
-        # special handling for subscript attribute
-        if (   defined $fo->{subscript_floor}
-            && defined $fo->{subscript_ceiling} )
-        {
-            $singleton = $fo if !defined $singleton;
-            $rc = $singleton->format_value_for_database( 'update', $fo );
-            return $rc if $rc != 0;
-            next       if !$fl->is_last;
+#        # special handling for subscript attribute
+        if (   defined $fo->{subscript_floor}) {
+             my $min = $fo->{subscript_floor}-1;
+             my $max = $fo->{subscript_ceiling}-1;
+             my $str = $vals{$tnc} || '';
+             my @chars = split //, $str;
+             my @vcs   = split //, $v;
+             for (my $i = $max; $i >= $min; $i--) {
+                 $chars[$i] = $vcs[$i-$min] || ' ';
+             }
+             $str = join ('', @chars);
+#warn "$min to $max, total str =\n$str\n";
+             $vals{$tnc} = $str;
+             push @{$sstags{$tnc}}, $tag;
+             next;
         }
         else {
             $rc = $fo->format_value_for_database( 'update', undef );
@@ -2565,18 +2684,7 @@ sub do_update {
 
         my $fv = $cur_row->{$alias} if defined $alias;
 
-        if ( $fl->is_last ) {    # add singleton on last iteration
-            if ( defined $singleton ) {
-                my ( $stag, $stbl, $scol ) = $singleton->get_names;
-                my $sval = $singleton->get_value;
-
-                if ( $sval ne $fv ) {
-                    $upds{$scol}          = $sval;
-                    $aliased_upds{$alias} = $sval;
-                }
-            }
-        }
-
+#warn "$tag $col $alias\n:$v:\n:$fv:\n";
         if ( $v ne $fv ) {
             $upds{$col}           = $v;
             $aliased_upds{$alias} = $v;
@@ -2584,6 +2692,24 @@ sub do_update {
 
     }
 #    $fl->print_list;
+
+#strings composed of substrings
+    foreach my $tnc (keys %vals) {
+        my $alias = $aliases->{$tnc};
+        my ($col) = $tnc =~ /\.(\w+)/;
+        my $fv = $cur_row->{$alias};
+        my $v = $vals{$tnc};
+#warn "$tnc = :$v:$fv\n";
+        if ( $v ne $fv ) {
+            $upds{$col}           = $v;
+            $aliased_upds{$alias} = $v;
+            foreach my $tag (@{$sstags{$tnc}}) {
+                $alias = $aliases->{"$tnc $tag"};
+#warn "alias of $tag $tnc is $alias\n";
+                $aliased_upds{$alias} = $v;
+            }
+        }
+    } 
 
     my @updcols = keys(%upds);
     if ( @updcols == 0 ) {
@@ -2614,6 +2740,17 @@ sub do_update {
         return;
     }
     else {
+
+        # refreshes the values on the screen after update
+        my $driver        = $DB->{'Driver'}->{'Name'};
+        my $refetcher = $INSERT_RECALL{$driver} || \&Default_refetch;
+        my $sth;
+        my $row;
+        if ( defined($refetcher) ) {
+            $row =
+              &$refetcher( $sth, $table );
+        }
+
         my $m = $GlobalUi->{error_messages}->{'ro10d'};
         $m = ( 0 + $rc ) . " " . $m;
         $GlobalUi->display_status($m);
@@ -2627,6 +2764,7 @@ sub do_update {
         #rows, then this is wrong.
 
         map { $tmp->{$_} = $aliased_upds{$_}; } keys %aliased_upds;
+        map { $tmp->{$_} = $row->{$_}; } keys %$row;
         trigger_ctrl_blk( 'after', 'update', $table );
         display_row( $subform, $RowList->current_row );
     }
@@ -2673,13 +2811,13 @@ sub display_row {
         my $val;
         $val = $row->{$alias2} if defined $alias2;
         $val = $row->{$alias} if defined $alias && !defined $val;
+#warn "display: $tag $table.$col $alias $alias2\n$val:\n";
         if ( !defined $field_hash{$tag} || defined $val ) {
-            $field_hash{$tag} = 1;
-            warn "tag = $tag: val = $val:\n" if $::TRACE_DATA;
+            $field_hash{$tag} = $val;
+            warn "tnc = $tnc tag = $tag val = :$val:\n" if $::TRACE_DATA;
 
             my $pos = 0;
             my $rc  = 0;
-            $fo->set_value($val);
             ( $val, $pos, $rc ) = $fo->format_value_for_display( $val, $pos );
             $GlobalUi->set_screen_value( $tag, $val );
 
@@ -2688,6 +2826,13 @@ sub display_row {
             push @ofs, $col;
             trigger_ctrl_blk( 'after', 'display', @ofs );
         }
+    }
+
+    $sl->reset;
+    while ( my $fo = $sl->iterate_list ) {
+        my $tag = $fo->{field_tag};
+        my $val = $field_hash{$tag};
+        $fo->set_value($val) if defined $val;
     }
 
     $app->{fresh} = 1;
@@ -2708,17 +2853,22 @@ sub Pg_refetch {
 }
 
 sub Informix_refetch {
-    my $sth    = shift;    # statement handle; ignored.
+    my $sth    = shift;    # statement handle
     my $table  = shift;    # table to query
-    my $cols   = shift;    # columns to query
-    my $vals   = shift;    # values to query
-    my $fld    = shift;    # serial field name
-    my $serial = shift;    # serial field value
+#    my $cols   = shift;    # columns to query
+#    my $vals   = shift;    # values to query
+#    my $fld    = shift;    # serial field name
+#    my $serial = shift;    # serial field value
 
     warn "entering Informix_refetch\ntable = $table\n" if $::TRACE;
 
     my $aliases = $GlobalUi->{app_object}->{aliases};
     my $rowid   = $sth->{ix_sqlerrd}[5];
+    if (! $rowid) {
+        my $alias = $aliases->{"$table.rowid"};
+        my $cur_row = $RowList->current_row;
+        $rowid = $cur_row->{$alias};
+    }
     my $selects = '';
     foreach my $tnc ( keys %$aliases ) {
         next if $tnc =~ / (\w+)$/;

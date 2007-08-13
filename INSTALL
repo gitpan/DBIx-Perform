@@ -15,20 +15,26 @@ Pod-Escapes	S/SB/SBURKE/Pod-Escapes-1.04.tar.gz
 Pod-Simple	A/AR/ARANDAL/Pod-Simple-3.05.tar.gz
 Test-Simple	M/MS/MSCHWERN/Test-Simple-0.70.tar.gz
 Test-Pod	P/PE/PETDANCE/Test-Pod-1.26.tar.gz
-DBI		T/TI/TIMB/DBI-1.56.tar.gz 
+DBI		T/TI/TIMB/DBI-1.58.tar.gz 
 DBD		J/JO/JOHNL/DBD-Informix-2007.0226.tar.gz
-YAML		I/IN/INGY/YAML-0.62.tar.gz
+YAML		I/IN/INGY/YAML-0.65.tar.gz
 ParseRecDescent		D/DC/DCONWAY/Parse-RecDescent-1.94.tar.gz
 
 Extras needed for HPUX:
 Scalar-Utils	G/GB/GBARR/Scalar-List-Utils-1.19.tar.gz
 Test-Harness	P/PE/PETDANCE/Test-Harness-2.64.tar.gz
+Text-Balanced   D/DC/DCONWAY/Text-Balanced-v2.0.0.tar.gz
+version         J/JP/JPEACOCK/version-0.7203.tar.gz
 
 Optional:
 Sort-Versions	E/ED/EDAVIS/Sort-Versions-1.5.tar.gz
 
 Commands in gory detail
 -----------------------
+
+These commands were used on Red Hat Enterprise Linux 4
+(Linux kernel version 2.6.9-55.ELsmp) with Informix SE 7.25,
+perl 5.8.5, and gcc 3.4.6.
 
 # cd /usr/include
 # rm curses.h ncurses.h form.h menu.h panel.h
@@ -120,6 +126,7 @@ $ sudo make install
 $ tar xzf YAML-0.62.tar.gz
 $ cd YAML-0.62
 $ perl Makefile.pl
+Continue installing YAML.pm? [y]
 $ make
 $ sudo make install
 $ cd ..
@@ -132,8 +139,8 @@ $ sudo make install
 $ cd ..
 
 
-$ tar xjf DBIx-Perform-0.691.tar.bz2
-$ cd DBIx-Perform-0.691.tar.bz2
+$ tar xjf DBIx-Perform-0.692.tar.bz2
+$ cd DBIx-Perform-0.692.tar.bz2
 $ perl Makefile.pl
 $ make
 $ sudo make install
@@ -141,22 +148,27 @@ $ cd ..
 
 
 ------------------------------------------------------------------------
-HP-UX installation (incomplete)
+HP-UX installation
 
-HP-UX by default had only a very basic curses.  It didn't come with gcc.
-After installing gcc and ncurses in /usr/local, some differences:
+The setup used for this installation may be atypical and much of the
+following may not apply to another HP-UX system.
+
+The system is HP-UX 11.11, with Informix (IBM Informix Dynamic Server
+Version 10.00.HC4) in /usr/informix, and perl 5.6.1.
+gcc 3.4.6 and ncurses are installed in /usr/local/bin.
 
 # cd /usr/include
 # rm curses.h ncurses.h form.h menu.h panel.h
 
 $ export PATH=/usr/local/bin:$PATH
-$ export CURSES_CFLAGS=-I/usr/local/include/ncurses
-$ export CURSES_LDFLAGS=-L/usr/local/lib
+$ export CURSES_CFLAGS="-I/usr/local/include/ncurses"
+$ export CURSES_LDFLAGS="-L/usr/local/lib -lncurses"
 
 $ gzip -d < Curses-1.15.tar.gz | tar xf -
 $ cd Curses-1.15
 $ perl Makefile.PL PANELS MENUS FORMS
 $ make
+$ su
 # make install
 $ cd ..
 
@@ -168,6 +180,7 @@ edit line 282 of Makefile, changing
 to
   XSUBPPARGS = $(XSUBPPARGS) -typemap mytypemap
 $ make
+$ su
 # make install
 $ cd ..
 
@@ -179,20 +192,87 @@ $ cd DBI-1.56
 $ perl Makefile.PL
 $ make
 $ make
+$ su
 # make install
 $ cd ..
 
-Here is another difficulty.  If the Informix binaries were compiled
-with cc, not gcc, then will have to change some things.
+Need "version" before Text-Balanced.
+
+Now things get strange.  /usr/informix/bin/esql uses the native compiler.
+To use gcc, I backed up /usr/informix/bin/esql to /usr/informix/bin/esql.hp
+and copied esql from an installation of Informix 7.25 on a Linux system
+to /usr/informix/bin/esql.gcc and modified it.
+(Point esql to esql.gcc with ln -s or just copy esql.gcc to esql.)
+The differences from /usr/informix/bin/esql.hp are:
+
+
+$ diff /usr/informix/bin/esql.gcc /usr/informix/bin/esql.hp
+26,30c26,30
+< CC="${INFORMIXC=/usr/local/bin/gcc} -lxti -lsec"
+< CC_TH="${INFORMIXC=/usr/local/bin/gcc} -lxti -lsec"
+< CPP="${INFORMIXCPP=CC} "
+< CPP_TH="${INFORMIXCPP=CC} "
+< STATICFLAGS=""
+---
+> CC="${INFORMIXC=cc} +DS2.0 +DA1.1"
+> CC_TH="${INFORMIXC=cc} +DS2.0 +DA1.1"
+> CPP="${INFORMIXCPP=aCC} +DS2.0 +DA1.1"
+> CPP_TH="${INFORMIXCPP=aCC} +DS2.0 +DA1.1"
+> STATICFLAGS="-Wl,+n"
+36c36
+< CC_AMD32="-m32"
+---
+> CC_AMD32=""
+215,217c215,217
+< SYSLIB="-lc -lm -lcrypt "
+< SYSNLIB=""
+< TLILIB="/usr/lib/libnsl.a /usr/lib/libnsl.so"
+---
+> SYSLIB="-lm -lsec -lnsl_s "
+> SYSNLIB="-lnsl_s "
+> TLILIB="/usr/lib/libnsl_s.a  /usr/lib/libnsl_s.sl"
+350c350
+<                THRLIB="$TLIB -lpthread"
+---
+>                THRLIB="$TLIB "
+378,379c378,379
+<             SYSTHRLIB="-lc -lm -lcrypt "
+<             SYSTHRNLIB="-lpthread"
+---
+>             SYSTHRLIB="-lm -lsec -lnsl_s "
+>             SYSTHRNLIB=""
+439c439
+<             THRLIB="$TLIB -lpthread"
+---
+>             THRLIB="$TLIB "
+442c442
+<                 if [ ! -f /usr/lib/lib$THLIB_SUB.so ]
+---
+>                 if [ ! -f /usr/lib/lib$THLIB_SUB.sl ]
+804c804
+<                 cpinput=$base.pcp.c
+---
+>                 cpinput=$base.pcp
+808c808
+<                 cpinput=$base.pcp.c
+---
+>                 cpinput=$base.pcp
+825c825
+<                 rm -f $base.tmp $base.pcp.c
+---
+>                 rm -f $base.tmp $base.pcp
+
+
+Once the modified esql is in place, then can make the DBD-Informix
+Perl module in HP-UX:
 
 $ tar xzf DBD-Informix-2007.0226.tar.gz
 $ cd DBD-Informix-2007.0226
 $ perl Makefile.PL
 $ make
-$ sudo make install
+$ su
+# make install
 
-I have not yet managed to get DBD-Informix to install in HPUX 11.11 with
-Informix 7.2.
 
 =========================================================================
 "make test" has not been updated, and will likely print many errors.
@@ -310,8 +390,7 @@ database will catch all such problems, but this should be tested more.
 
 minor problems
 --------------
-ctrl-c breaks out of application if user has not yet done anything.
-sperform only beeps.  q, ctrl-c, ctrl-c behaves correctly.
+Comments are converted to uppercase.
 
 After a big slow query, the next query is slow.  After fetching something
 like 100,000 rows, the next query will be as slow even if it only fetches
@@ -319,19 +398,12 @@ like 100,000 rows, the next query will be as slow even if it only fetches
 If the 1st query is run and then the 2nd query is run twice, the 2nd
 time on the 2nd query will be fast.
 
-Comments are converted to uppercase.
+Some queries with lookups can be slow.  Each query can actually result
+in several queries being made, and some of those fetch all rows from
+another table to do a lookup.  If the looked up table has many rows,
+then the process can be slow.
 
-The processing of a .per file to an intermediate form is extremely slow.
-Can take more than 1 minute.  Originally, DBIx:Perform did not "compile"
-to an intermediate form, but operated directly from a given .per file.
-sperform has a "compiler" called sformbld, which "compiles" a .per file
-to a .frm file.  sperform itself actually runs from a given .frm file.
-Since sperform made this intermediate step, the easiest workaround was
-to do something similar in DBIx::Perform.
-The script "pformbld" processes a .per file and writes out the results to
-a much larger .yml file, taking a long time to do that part.
-DBIx::Perform loads its data from the .yml file, taking up to 2 seconds
-to start.
+May have different behavior on fields with the "picture" attribute.
 
 trivial problems
 ----------------
@@ -339,8 +411,6 @@ Different behavior if wildcards are put in a "serial only" field for
 a query.  sperform gives "Error in field" and stays in the field.
 DBIx::Perform tries to run the query, gets and reports a DB error,
 and returns to the main menu.
-
-Also, may have different behavior on fields with the "picture" attribute.
 
 Reverse color fields on any screen but the first aren't always displayed
 reversed.  Depends on the TERM environment variable.  (And yet the reverse

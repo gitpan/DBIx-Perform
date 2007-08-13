@@ -37,7 +37,6 @@ sub new {
     my $class = shift;
 
     bless my $self = {
-        top  => 0,
         size => 0,
         iter => 0,
         rows => undef,
@@ -77,7 +76,7 @@ sub look_ahead {
 sub is_last {
     my $self = shift;
 
-    $self->{iter} == $self->{top} ? return 1 : return undef;
+    $self->{iter} == $self->{size}-1 ? return 1 : return undef;
 }
 
 sub reset {
@@ -109,9 +108,7 @@ sub next_row {
     }
     else { ++$self->{iter}; }
 
-    $self->{iter} = $self->{top} if $self->{iter} > $self->{top};
-
-    #$self->{iter} = 0 if $self->{iter} > $self->{top};
+    $self->{iter} = $self->{size}-1 if $self->{iter} >= $self->{size};
 
     return $self->{rows}->[ $self->{iter} ];
 }
@@ -126,8 +123,6 @@ sub previous_row {
     else { --$self->{iter}; }
 
     $self->{iter} = 0 if $self->{iter} < 0;
-
-    #$self->{iter} = $self->{top} if $self->{iter} < 0;
 
     return $self->{rows}->[ $self->{iter} ];
 }
@@ -152,10 +147,9 @@ sub add_row {
 
     return undef if !defined($row);
 
-    ++$self->{top} if $self->{size} != 0;
-    $self->{rows}->[ $self->{top} ] = $row;
+    $self->{rows}->[ $self->{size} ] = $row;
+    $self->{iter} = $self->{size};
     ++$self->{size};
-    $self->{iter} = $self->{top};
 
     return $self->last_row;
 }
@@ -169,17 +163,15 @@ sub list_cursor {
 sub remove_row {
     my $self = shift;
 
-    return undef if $self->{top} == 0;
+    return undef if $self->{size} == 0;
 
     my $i = $self->{iter};
 
-    while ( $i < $self->{top} ) {
+    --$self->{size};
+    while ( $i < $self->{size} ) {
         $self->{rows}[$i] = $self->{rows}[$i+1];
         $i++;
     }
-
-    --$self->{size};
-    --$self->{top};
 
     return $self->current_row;
 }
@@ -195,7 +187,7 @@ sub insert_row {
         ++$self->{size};
     }
 
-    if ( $self->{iter} != $self->{top} ) {
+    if ( $self->{iter} != $self->{size}-1 ) {
         my @tmp = @{ $self->{rows} };
         my @b   = ();
         my $i   = 0;
@@ -210,10 +202,9 @@ sub insert_row {
         }
         $self->{rows} = \@b;
     }
-    else { $self->{rows}->[ $self->{top} ] = $row; }
+    else { $self->{rows}->[ $self->{size}-1 ] = $row; }
 
     ++$self->{size};
-    ++$self->{top};
 
     return $self->current_row;
 }
@@ -232,9 +223,9 @@ sub replace_row {
 sub last_row {
     my $self = shift;
 
-    $self->{iter} = $self->{top};
+    $self->{iter} = $self->{size}-1;
 
-    return $self->{rows}->[ $self->{top} ];
+    return $self->{rows}->[ $self->{iter} ];
 }
 
 sub first_row {
@@ -288,7 +279,6 @@ sub clear_list {
 
     $self->{size} = 0;
     $self->{iter} = 0;
-    $self->{top}  = 0;
 
     $self->{rows} = ();
 }
@@ -300,14 +290,13 @@ sub clone_list {
     my @a;
     my $i = 0;
 
-    while ( $i <= $self->{top} ) {
+    while ( $i < $self->{size} ) {
         $a[$i] = $self->{rows}->[$i];
         $i++;
     }
     $list->{rows} = \@a;
     $list->{iter} = 0;
     $list->{size} = $self->{size};
-    $list->{top}  = $self->{top};
 
     return $list;
 }
@@ -315,7 +304,6 @@ sub clone_list {
 sub dump_list {
     my $self = shift;
 
-    print STDERR "top: $self->{top}\n";
     print STDERR "iter: $self->{iter}\n";
     print STDERR "size: $self->{size}\n";
     print STDERR "rows array: \n";

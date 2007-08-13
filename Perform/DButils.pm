@@ -2,7 +2,7 @@ package DBIx::Perform::DButils;
 use strict;
 use base 'Exporter';
 
-our $VERSION   = '0.691';
+our $VERSION   = '0.692';
 our @EXPORT_OK = qw(&open_db);
 
 use DBI;
@@ -34,7 +34,7 @@ sub open_db {
     my $dbname = shift;    # May be a connect arg.
 
     my $connect_arg = $dbname;
-    my $dbtype      = $ENV{DB_CLASS} || 'Pg';
+    my $dbtype      = $ENV{DB_CLASS} || 'Informix';
     my $dbuser      = $ENV{DB_USER};
     my $dbpass      = $ENV{DB_PASSWORD};
 

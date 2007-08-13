@@ -11,7 +11,7 @@ use Parse::RecDescent;
 use Data::Dumper;
 use base 'Exporter';
 
-our $VERSION = '0.691';
+our $VERSION = '0.692';
 
 # debug: set (unset) in runtime env
 $::TRACE      = $ENV{TRACE};
@@ -80,8 +80,6 @@ sub new {
         type            => undef,    # Fields values have a type  at runtime
         db_type         => undef,    # table.column type in the database
         size            => undef,
-#        dominant_table  => undef,    # for verify joins
-#        dominant_column => undef,    # for verify joins
 
         # attributes
         active_tabcol  => undef, # for joining fields, the active table & column
@@ -136,14 +134,12 @@ sub duplicate {
 sub parse_line {
     my $self   = shift;
     my $line   = shift;
-    my $tables = shift;
+    my $parser = shift;
 
     my $val = undef;
     $self->{line} = $line;
-    my $grammar = DBIx::Perform::AttributeGrammar::get_grammar;
-    my $parser  = Parse::RecDescent->new($grammar);
 
-    if ( my $ref = $parser->startrule( uc $line ) ) {
+    if ( my $ref = $parser->startrule( $line ) ) {
         my $href = @$ref[0];    # returned from the parser
 
         $self->{line} = $line;
@@ -522,16 +518,44 @@ sub set_value {
     my $self  = shift;
     my $value = shift;
 
-    #if ( defined $value ) { $value =~ s/\s*$//; undef $value if $value eq ''; }
-
-    if ( defined $value ) { undef $value if $value eq ''; }
-    $self->{value} = $value;
+#    if ( defined $value ) { undef $value if $value eq ''; }
+#    if (defined $self->{subscript_floor}) {
+#        my $min  = $self->{subscript_floor};
+#        my $max  = $self->{subscript_ceiling};
+#        my @va = split //, $self->{value};
+#        for (my $i = $max-1; $i >= 0; $i--) {
+#            if ($i >= length $self->{value}) {
+#                $va[$i] = ' ';
+#            } else {
+#                last;
+#            }
+#        }
+#        $self->{value} = join ('', @va);
+#        substr($self->{value}, $min-1, $max-$min) = $value;
+#    } else {
+        $self->{value} = $value;
+#    }
     return $value;
 }
 
 sub get_value {
     my $self = shift;
 
+#    if (defined $self->{subscript_floor}) {
+#        my $min  = $self->{subscript_floor};
+#        my $max  = $self->{subscript_ceiling};
+#        my $val = $self->{value} || '';
+#        my @va = split //, $val;
+#        for (my $i = $max-1; $i >= 0; $i--) {
+#            if ($i >= length $val) {
+#                $va[$i] = ' ';
+#            } else {
+#                last;
+#            }
+#        }
+#        $val = join ('', @va);
+#        return substr( $val, $min - 1, $max-$min )
+#    }
     return $self->{value};
 }
 
@@ -1009,8 +1033,9 @@ sub handle_subscript_attribute {
     my $GlobalUi = $DBIx::Perform::GlobalUi;
     my $tag      = $self->get_field_tag;
 
-    my $val   = $self->get_value;
-    my $vsize = length $val;
+    my $val   = $screen_value;
+    my $vsize = 0;
+    $vsize = length $val if defined $val;
 
     my $min  = $self->{subscript_floor};
     my $max  = $self->{subscript_ceiling};
@@ -1141,7 +1166,7 @@ sub handle_date_attribute {
         $GlobalUi->set_screen_value( $tag, $tmp );
         return ( $screen_value, $pos, 0 );
     }
-    warn "Only: MM\/DD\/YYY and MM\/DD\/YYYY date formats are supported.";
+    warn "Only: MM\/DD\/YY and MM\/DD\/YYYY date formats are supported.";
     return ( $screen_value, $pos, 0 );
 }
 
@@ -1169,6 +1194,7 @@ sub handle_format_attribute {
     # FLOAT, INT and REAL
 
     $screen_value = $self->get_value;
+    $screen_value = '' if !defined $screen_value;
 
     my ( $tout, $hashcnt, @vm, @vn, @fm, @fn, @tmp );
     my ( @out, @mout, @nout, $out, $mout, $nout, $i, $vpos );
@@ -1200,7 +1226,7 @@ sub handle_format_attribute {
         @vn = split //, $tmp[1];
     }
     else {
-        @vm = split //, $tmp[0];
+        @vm = defined $tmp[0] ? split //, $tmp[0] : ();
         @vn = ();
     }
     undef @tmp;
@@ -1324,7 +1350,9 @@ sub validate_input {
             return -1;
         }
         if ( !defined $self->{null_ok} ) {
-            $GlobalUi->display_error('th34s');
+            my $col = $self->{column_name};
+            my $m = " The column \"$col\" does not allow null values.  ";
+            $GlobalUi->display_error($m);
             $GlobalUi->change_focus_to_field_in_current_table($tag);
             return -1;
         }

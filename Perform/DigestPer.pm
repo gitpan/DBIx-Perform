@@ -56,9 +56,8 @@ Total rewrite of the parsing of the "attribute" section,
 greatly expanded parsing of the "instructions" section.
 
 User creates an intermediate file in YAML with "convert_per_to_yml" sub.
-This is very slow, and may take more than a minute.
 
-User runs Perl Perform on the .yml file.
+User runs DBIx::Perform on the .yml file.
 
 Brenton Chapin, Martin Baer, et. al...
 Valtech (www.valtech.com)
@@ -72,7 +71,7 @@ use vars qw(@EXPORT_OK $VERSION %HEADING_WORDS);
 
 BEGIN {
     @EXPORT_OK = qw(digest digest_file convert_per_to_xml convert_per_to_yml );
-    $VERSION   = '0.691';
+    $VERSION   = '0.692';
 
     %HEADING_WORDS =
       map { ( $_, 1 ) } qw(screen tables attributes instructions end);
@@ -98,7 +97,7 @@ descriptor.
 
 =cut
 
-our $VER_DATE = '2007-07-27';
+our $VER_DATE = '2007-08-07';
 
 our $TABLES;
 our $FieldList;
@@ -115,8 +114,10 @@ sub digest {
     my ( $db, $tables, $atts, $instrs );
     my $screens = [];
     local $TABLES;    # for attributes parser to check
+    my $connected = 0;
     while ( $word = $parser->read_token('true') ) {
-        if ( $word eq 'database' ) {
+        if ( $word eq 'database' && !$connected ) {
+            $connected = 1;
             $db = read_database($parser);
         }
         elsif ( $word eq 'screen' ) {
@@ -403,6 +404,13 @@ sub field_tag_joins_post {
     if ( uc( $field->{field_tag} ) eq "EMPTY_FIELD_TAG" ) {
         $field->{field_tag} = $previous_tag;
     }
+    {
+        my $tbl = $field->{table_name};
+        my $col = $field->{column_name};
+        $field->{verify} = 
+          ($field->{line} =~ /\*\s*$tbl\.$col(\W|$)/)
+          ? 1 : undef;
+    }
 
     # adding the top-level field object for this itteration
     $FieldList->add_field($field);
@@ -419,12 +427,14 @@ sub field_tag_joins_post {
 
             my $join_table  = $join{$index}->{join_table};
             my $join_column = $join{$index}->{join_column};
-            my $join_verify = $join{$index}->{verify};
 
             my $new_field = $field->duplicate;
             $new_field->{field_tag_join_hash} = undef;
             $new_field->{table_name}          = $join_table;
             $new_field->{column_name}         = $join_column;
+            $new_field->{verify} = 
+               ($field->{line} =~ /\*\s*$join_table\.$join_column(\W|$)/)
+               ? 1 : undef;
 
             # expand lookup attributes (if any)  for the new field
             lookup_attributes_post($new_field);
@@ -436,8 +446,6 @@ sub field_tag_joins_post {
         }
     }
     warn Data::Dumper->Dump( [$field], ['field in digest'] ) if $::TRACE_DATA;
-
-    #warn Data::Dumper->Dump( [$field], ['field in digest'] );
 
     return $field;
 }
@@ -558,6 +566,7 @@ sub include_post_processing {
 sub make_field_obj {
     my $line           = shift;
     my $previous_field = shift;
+    my $gparser        = shift;
 
     # strip out comments { ... } FIX: needs regex for "xxx { {...} } yyy;"
     my @text = split( /\{.*\}/, $line );
@@ -565,7 +574,7 @@ sub make_field_obj {
 
     my $field = new DBIx::Perform::Field;
 
-    if ( $field->parse_line($parsable) ) {
+    if ( $field->parse_line($parsable, $gparser) ) {
         $field = table_post_processing($field);
         $field = field_tag_joins_post( $field, $previous_field );
         $field = lookup_attributes_post($field);
@@ -589,6 +598,9 @@ sub read_attributes {
 
     my $in_comment = undef;
     my $builder    = undef;
+
+    my $grammar = DBIx::Perform::AttributeGrammar::get_grammar;
+    my $gparser = Parse::RecDescent->new($grammar);
 
     while ( $line = $parser->read_line() ) {
         chomp $line;
@@ -615,7 +627,7 @@ sub read_attributes {
         next unless $builder =~ /;/;
 
         my $tmp_line = $lines;
-        my $field = make_field_obj( $tmp_line, $previous_field );
+        my $field = make_field_obj( $tmp_line, $previous_field, $gparser );
 
         $previous_field = $field;
         $lines          = '';

@@ -8,7 +8,7 @@ use DBIx::Perform::Field;
 use base 'Exporter';
 use DBI;
 
-our $VERSION = '0.691';
+our $VERSION = '0.692';
 
 # debug: set (unset) in runtime env
 $::TRACE      = $ENV{TRACE};
@@ -499,7 +499,7 @@ sub display_defaults_to_screen {
         $value = POSIX::strftime( "%Y-%m-%d", localtime() )
           if uc($value) eq 'TODAY';
 
-        $fo->set_value($value) if !defined $fo->get_value;
+        $fo->set_value($value); # if !defined $fo->get_value;
         $fo->format_value_for_display( $fo->get_value, 0 );
         $ui->set_screen_value( $tag, $fo->get_value );
     }
@@ -528,6 +528,9 @@ sub set_db_type_values {
             my $type;
             my $query = "SELECT * FROM $table";
             my $sth   = $database->prepare($query);
+            unless (defined $sth) {
+                die "\n\nInitial query failed:\n$query\n";
+            }
 
             my @db_cols = @{ $sth->{NAME} };    # Column names
             my @db_nulls =

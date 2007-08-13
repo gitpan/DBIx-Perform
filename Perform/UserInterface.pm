@@ -14,7 +14,7 @@ use DBIx::Perform::FieldList;
 use base 'Exporter';
 use Data::Dumper;
 
-our $VERSION = '0.691';    # valtech
+our $VERSION = '0.692';    # valtech
 
 # $UserInterface methods
 our @EXPORT_OK = qw(
@@ -39,7 +39,6 @@ our @EXPORT_OK = qw(
   &button_push
   &change_buttons_to_label
   &change_label_to_buttons
-  &switch_buttons
   &change_modename
   &update_info_message
   &update_subform
@@ -128,7 +127,7 @@ our %Info_messages = (
     'query'    => 'Searches the active database table.',
     'next'     => 'Shows the next row in the Current List.',
     'previous' => 'Shows the previous row in the Current List.',
-    'view'     => 'This feature is not supported.',
+    'view'     => 'Runs editor commands to display BLOB contents.',
     'add'      => 'Adds new data to the active database table.',
     'update'   => 'Changes this row in the active database table.',
     'remove'   => 'Deletes a row from the active database table.',
@@ -168,6 +167,7 @@ our %Runtime_error_messages = (
     '1 8d'     => '1 row(s) found',
     'ro7d'     => 'row(s) found',
     'ro6d'     => 'Row added',
+    'ro8d'     => 'Row deleted',
     'no14d'    => 'No fields changed',
     'ro10d'    => 'rows affected',
     'ro6d'     => 'Row added',
@@ -183,6 +183,9 @@ our %Runtime_error_messages = (
     'th33e'    => 'This field requires an entered value',
     'pe31e'    => 'permissable values are unavailable',
     'th47w'    => ' The current row position contains a deleted row',
+    'ro54.'    => 'Row data was not current.  Refreshed with current data.',
+    'so34.'    => 'Someone else has updated this row.',
+    'so35.'    => 'Someone else has deleted this row.',
 );
 
 our %Help_screens = (
@@ -599,6 +602,7 @@ sub run {
 
     #warn "max screen size = $maxx, $maxy\n";
     Curses::leaveok( curscr, 1 );
+    Curses::raw();
     my $i = 0;
 
     # parse per file data into an array of form hashes - multiple forms occur
@@ -667,7 +671,7 @@ sub capture_file_data    # previously cursese_formdefs
     my $lineoffset = 0;                             # used for combining screens
     my @formdefs   = ();
     my $appbg      = $$appdef{'BACKGROUND'};
-    my $deffldbg   = $ENV{'FIELDBGCOLOR'} || 'blue';
+    my $deffldbg   = $ENV{'FIELDBGCOLOR'} || 'black';
 
     my $fl =
       $self->get_field_list;    # full list of field objects from the per file
@@ -832,15 +836,15 @@ sub display_status {
     my $wid  = $form->getWidget('Error');
     my $mwh  = $form->{MWH};
 
-    my $bg = lc $ENV{'BGCOLOR'};
-    my $fg = $bg eq 'black' || $bg eq 'blue' ? 'white' : 'black';
+    my $bg = lc $ENV{'BGCOLOR'} || 'black';
+    my $fg = $bg =~ /black|blue/i ? 'white' : 'black';
 
     $wid->setField( 'VALUE',      $message );
     $wid->setField( 'COLUMNS',    $len );
     $wid->setField( 'FOREGROUND', $fg );
     $wid->setField( 'BACKGROUND', $bg );
 
-    $wid->draw($mwh);
+    $wid->draw($mwh) if $mwh;
 
     return undef;
 }
@@ -849,7 +853,7 @@ sub clear_display_status {
     my $self = shift;
 
     my $message = "";
-    my $bg      = $ENV{'BGCOLOR'};
+    my $bg      = lc $ENV{'BGCOLOR'} || 'black';
     my $fg      = $bg;
 
     my $form = $self->{form_object};
@@ -895,13 +899,12 @@ sub display_error {
 
     $wid->setField( 'VALUE',   $message );
     $wid->setField( 'COLUMNS', $len );
-    my $env = lc $ENV{'BGCOLOR'};
+    my $env = lc $ENV{'BGCOLOR'} || 'black';
     my $bg  = $env;
     unless ($dontrev) {
-
-        $bg = $env eq 'black' || $env eq 'blue' ? 'white' : 'black';
+        $bg = $env =~ /black|blue/i ? 'white' : 'black';
     }
-    my $fg = $bg eq 'black' ? 'white' : 'black';
+    my $fg = $bg =~ /black|blue/i ? 'white' : 'black';
 
     $wid->setField( 'FOREGROUND', $fg );
     $wid->setField( 'BACKGROUND', $bg );
@@ -917,7 +920,7 @@ sub clear_display_error {
     my $self = shift;
 
     my $message = "";
-    my $bg      = $ENV{'BGCOLOR'};
+    my $bg      = lc $ENV{'BGCOLOR'} || 'black';
     my $fg      = $bg;
 
     my $form = $self->{form_object};
@@ -1011,7 +1014,8 @@ sub button_push {
     my %messages    = %Info_messages;
 
     warn "TRACE: entering button_push\n" if $::TRACE;
-    if ( $key eq KEY_RIGHT || $key eq KEY_LEFT ) {
+    if ( $key eq KEY_RIGHT || $key eq KEY_LEFT || $key eq ' '
+         || $key eq KEY_UP || $key eq KEY_DOWN ) {
         $form->setField( 'DONTSWITCH', 1 );
         $GlobalUi->display_comment("");
         $GlobalUi->clear_display_error;
@@ -1019,6 +1023,7 @@ sub button_push {
         my $m   = $messages{$thislabel};
         my $wmm = $form->getWidget('InfoMsg');
         $wmm->setField( 'VALUE', $m );
+        $wmm->setField( 'COLUMNS', length $m );
     }
     elsif ( $key =~ /\d/ ) {
         warn "TRACE: button_push, number key\n" if $::TRACE;
@@ -1040,6 +1045,7 @@ sub button_push {
             $form->setField( 'DONTSWITCH', 1 );
         }
     }
+    warn "TRACE: leaving button_push\n" if $::TRACE;
 }
 
 # replace the buttons with a mode label
@@ -1547,7 +1553,7 @@ sub set_screen_value {
 
     my $scrns = DBIx::Perform::get_screen_from_tag($field_tag);
 
-    warn join ' , ', @$scrns if $::TRACE_DATA;
+    warn join (' , ', @$scrns) . "\n" if $::TRACE_DATA;
     foreach my $scr (@$scrns) {
         my $form    = $app->getForm("Run$scr");
         my $subform = $form->getSubform('DBForm');
@@ -1602,20 +1608,20 @@ sub button_to_index {
 
     if ( !defined($button) ) { return undef; }
 
-    if    ( $button eq lc 'query' )    { return 0; }
-    elsif ( $button eq lc 'next' )     { return 1; }
-    elsif ( $button eq lc 'previous' ) { return 2; }
-    elsif ( $button eq lc 'view' )     { return 3; }
-    elsif ( $button eq lc 'add' )      { return 4; }
-    elsif ( $button eq lc 'update' )   { return 5; }
-    elsif ( $button eq lc 'remove' )   { return 6; }
-    elsif ( $button eq lc 'table' )    { return 7; }
-    elsif ( $button eq lc 'screen' )   { return 8; }
-    elsif ( $button eq lc 'current' )  { return 0; }
-    elsif ( $button eq lc 'master' )   { return 1; }
-    elsif ( $button eq lc 'detail' )   { return 2; }
-    elsif ( $button eq lc 'output' )   { return 3; }
-    elsif ( $button eq lc 'exit' )     { return 4; }
+    if    ( $button eq 'query' )    { return 0; }
+    elsif ( $button eq 'next' )     { return 1; }
+    elsif ( $button eq 'previous' ) { return 2; }
+    elsif ( $button eq 'view' )     { return 3; }
+    elsif ( $button eq 'add' )      { return 4; }
+    elsif ( $button eq 'update' )   { return 5; }
+    elsif ( $button eq 'remove' )   { return 6; }
+    elsif ( $button eq 'table' )    { return 7; }
+    elsif ( $button eq 'screen' )   { return 8; }
+    elsif ( $button eq 'current' )  { return 0; }
+    elsif ( $button eq 'master' )   { return 1; }
+    elsif ( $button eq 'detail' )   { return 2; }
+    elsif ( $button eq 'output' )   { return 3; }
+    elsif ( $button eq 'exit' )     { return 4; }
 
     return undef;
 }
@@ -1706,11 +1712,9 @@ sub add_field_list_to_screens {
                     # REVERSE
                     my $reverse = $fo->{reverse};
                     if ( defined $reverse ) {
-                        my $env = lc $ENV{'BGCOLOR'};
-                        my $bg = $env eq 'black'
-                          || $env eq 'blue' ? 'white' : 'black';
-                        my $fg = $bg eq 'black'
-                          || $bg eq 'blue' ? 'white' : 'black';
+                        my $env = lc $ENV{'BGCOLOR'} || 'black';
+                        my $bg = $env =~ /black|blue/i ? 'white' : 'black';
+                        my $fg = $bg =~ /black|blue/i ? 'white' : 'black';
 
                         $wid[$i]->setField( 'FOREGROUND', $fg );
                         $wid[$i]->setField( 'BACKGROUND', $bg );

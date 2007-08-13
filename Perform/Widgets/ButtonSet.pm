@@ -7,7 +7,7 @@ use Curses;    # for KEY_foo constants.
 use Curses::Widgets;
 use base 'Exporter';
 
-our $VERSION = '0.691';
+our $VERSION = '0.692';
 
 sub _conf {
     my $self  = shift;
@@ -38,13 +38,20 @@ sub input_key {
         $$conf{EXIT} = 1;
     }
     elsif ($hz) {
-        if ( $in eq KEY_RIGHT or $in eq ' ' ) {
+        if ( $in eq KEY_RIGHT || $in eq ' ' ) {
             ++$value;
-            $value = 0 if $value == $num;
+            $value = 0 if $value >= $num;
         }
         elsif ( $in eq KEY_LEFT ) {
             --$value;
-            $value = ( $num - 1 ) if $value == -1;
+            $value = ( $num - 1 ) if $value < 0;
+        }
+        elsif ( $in eq KEY_DOWN ) {
+            $value = $$conf{LINEEND};
+            $value = 0 if $value >= $num;
+        }
+        elsif ( $in eq KEY_UP ) {
+            $value = $$conf{LINEBEGIN};
         }
         elsif ( $in !~ /[\d\cw]/ ) {
             beep;
@@ -89,7 +96,8 @@ sub execute {
             $self->input_key($key);
         }
 
-        return $key if ( ( $key eq KEY_RIGHT ) || ( $key eq KEY_LEFT ) );
+        return $key if ( ( $key eq KEY_RIGHT ) || ( $key eq KEY_LEFT ) 
+                         || $key eq ' ' );
         return $key if ( $key =~ /[\d\cw]/ );
 
         $self->draw( $mwh, 1 );
@@ -140,6 +148,7 @@ sub _cursor {
         else {
             $length = length( @labels[ $$conf{VALUE} ] ) + 2;
             $i      = 0;
+            my $lb = 0;
             $bute   = $offset;
             foreach (@labels) {
                 $bute += length($_) + 2;
@@ -153,6 +162,8 @@ sub _cursor {
                     $bute   = 7 + length($_);
                     $offset = 5;
                     $b_line = " ... ";
+                    $$conf{LINEBEGIN} = $lb;
+                    $lb = $i;
                 }
                 $i++;
                 if ( $i <= $$conf{VALUE} ) {
@@ -160,6 +171,11 @@ sub _cursor {
                 }
                 $b_line .= ' ' . $_ . ' ';
             }
+            $$conf{LINEEND} = $i;
+#FIX: next line is a hack to get around having to run through the entire
+# list to figure out what LINEBEGIN should really be.  Works as long
+# as the menu <= 2 lines.
+            $$conf{LINEBEGIN} = $i if !$lb;
             $dwh->addstr( 0, 0, $b_line );
         }
         $x = $offset;

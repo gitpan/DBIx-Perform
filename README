@@ -75,9 +75,11 @@ it under the same terms as Perl itself.
 =======================================================================
 =======================================================================
 =======================================================================
-DBIx::Perform, version 0.691, 2007 July 27.
+DBIx::Perform, version 0.692, 2007 Aug 1.
 
 Many, many changes and improvements.  And perhaps some regressions too.
+In order to better duplicate the original, database operations have
+unfortunately become much more Informix specific, with much use of "rowid".
 
 Some of the improvements from version 0.05:
 Screen, Table, Master, and Detail buttons are implemented.
@@ -86,12 +88,14 @@ Query results more closely match the original utility's results.
 
 
 NOT IMPLEMENTED
-View, Output, and Current buttons.
+View and Output buttons.
 '!' key.
 Without Null Input in the Database section (p. 2-9).
+Alias and Owner in the Table section (p. 2-18).
 Color, Invisible, Verify, Wordwrap, Zerofill attributes.
 Allowing Input in the Displayonly attribute (p. 2-24).
 Delimiters, On Beginning, and On Ending instructions.
+Today, Current in the Default attribute.
 Today, Current, Max, Min, Count, Total, and Average in the Let instruction.
 Datetime and Interval data types (p. 3-11).
 All the returns (lngreturn, floreturn, etc.) except intreturn (p. 6-21).
@@ -118,5 +122,5 @@ Dallas, Texas 75234
 AUTHORS
 
   Martin Baer     2007/1/1  -  2007/7/14
-  Brenton Chapin  2007/3/16 -  2007/7/26
+  Brenton Chapin  2007/3/16 -  2007/8/06  (chapinb@acm.org)
 
