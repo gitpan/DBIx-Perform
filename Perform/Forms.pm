@@ -49,6 +49,12 @@ sub execute {
 #warn "mode = :$mode:\n";
     my $current_table = $GlobalUi->get_current_table_name;
     my @taborder = temp_generate_taborder($current_table, $mode);
+
+    # Take an early exit if there's nothing listed in the tab order
+    if (@taborder == 0) {
+        $GlobalUi->change_mode_display($subform, 'perform');
+        return 0;
+    }
 warn "taborder = ". join (' ',@taborder). "\n" if $::TRACE;
 
     my $widgets = $self->{WIDGETS};
@@ -75,12 +81,6 @@ warn "taborder = ". join (' ',@taborder). "\n" if $::TRACE;
         $$conf{DERIVED} = $oderived;
         $self->{LEVEL} = 0;
         return $key;
-    }
-
-    # Take an early exit if there's nothing listed in the tab order
-    unless ($#taborder > -1) {
-        carp ref($self), ":  Must have a widget to give focus to!";
-        return 0;
     }
 
     # Set the EXIT flag to false
@@ -124,13 +124,13 @@ warn "taborder = ". join (' ',@taborder). "\n" if $::TRACE;
             $subform->setField('TABORDER', \@taborder);
             $subform->setField('FOCUSED', $taborder[$i]); # first field.
             $subform->setField('editmode', $mode);
-
             return $key;
         }
 
 warn "enter call :" . $obj->{OnEnter} . "\n" if $::TRACE;
         # Call the OnEnter routine if present
         &{$obj->{OnEnter}}($self) if defined $obj->{OnEnter};
+        $GlobalUi->{newfocus} = '' if $GlobalUi->{newfocus} eq $taborder[$i];
 
         if ($app->{redraw_subform}) {
             $app->{redraw_subform} = 0;
@@ -183,17 +183,4 @@ warn "returned from exit call\n" if $::TRACE;
     return $key;
 }
 
-# sub drawField
-# {
-#     my $self = shift;
-#     my $fieldname = shift;
-#     my $draw_cursor = shift;
-#     $draw_cursor = 1 unless defined($draw_cursor);
-
-#     my $widg = $self->getWidget($fieldname);
-#     my   $dwh = $self->_canvas($mwh, $self->_geometry);
-    
-#     my $cwh = $self->_canvas($dwh, $self->_cgeometry);
-
-# }
 1;

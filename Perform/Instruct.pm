@@ -21,7 +21,7 @@ sub trigger_ctrl_blk_fld
     my $fo	= shift;
     my ( $field_tag, $table, $column_name) = $fo->get_names;
 
-warn "TRACE: entering trigger_ctrl_blk_fld $table.$column_name\n" if $::TRACE;
+warn "TRACE: entering trigger_ctrl_blk_fld $when $table.$column_name\n" if $::TRACE;
 
     my $app = $GlobalUi->{app_object};
     my @ofs = ($column_name, "$table.$column_name");
@@ -56,13 +56,13 @@ sub trigger_ctrl_blk
         }
     }
 
-#warn Data::Dumper->Dump([$controls], ['controls']) if $::TRACE_DATA;
+    return "\c0" unless @actions;
+
 warn "$when $event of " . join(', ', @ofs) . "\n" if $::TRACE_DATA;
 
 #warn "TRACE: leaving trigger\n" if $::TRACE;
 
-    my $rv = act(@actions);
-    return $rv;
+    return act(@actions);
 }
 
 # The actions are stored in an array.
@@ -72,7 +72,6 @@ sub act
 {
     my $actions = shift;
 
-#    my $GlobalUi = $GlobalUi;
     my $app = $GlobalUi->{app_object};
 
     foreach my $act (@$actions) {
@@ -175,6 +174,7 @@ sub do_the_math
 #            my $v = get_value_from_tag(@$fts[$vi++]);
             my $v = $GlobalUi->get_screen_value(@$fts[$vi++]);
 #warn "field :@$fts[$vi-1]:  =  :$v:\n";
+            $v =~ s/'/\\'/g;
             $v = "'" . $v . "'" unless DBIx::Perform::DigestPer::is_number($v);
             $e[$#fnest] .= $v;
         }
@@ -200,6 +200,7 @@ sub do_the_math
                 my $fname = pop @funcs;
                 my $v = call_extern_C_func($fname, 1, $result);               
 warn "return val from C function = :$v:\n" if $::TRACE;
+                $v =~ s/'/\\'/g;
                 $v = "'" . $v . "'"
                     unless DBIx::Perform::DigestPer::is_number($v);
                 $e[$#fnest] .= $v;
@@ -216,6 +217,7 @@ warn "evaluating :$e[0]:\n" if $::TRACE;
     $e[0] = '$result = ' . $e[0];
     eval $e[0];
     $result = '' unless defined $result;
+warn "result = :$result:\n" if $::TRACE;
     return $result;
 }
 
@@ -436,11 +438,14 @@ warn "extern_data_in: :$data_i[$i]:\n" if $::TRACE;
             my $field_tag = $1;
             my $val = $2;
 warn ":$field_tag: = :$val:\n" if $::TRACE_DATA;
-            $GlobalUi->set_screen_value($field_tag, $val);
             my $fo = DBIx::Perform::get_field_object_from_tag($field_tag);
             $fo->set_value($val);
+            my ($pos, $rc);
+            ($val, $rc) = $fo->format_value_for_display($val);
+            $GlobalUi->set_screen_value($field_tag, $val);
         }
     }
+    $GlobalUi->redraw_subform;
     return  $rv;
 }
 

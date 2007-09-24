@@ -11,7 +11,7 @@ use Parse::RecDescent;
 use Data::Dumper;
 use base 'Exporter';
 
-our $VERSION = '0.692';
+our $VERSION = '0.693';
 
 # debug: set (unset) in runtime env
 $::TRACE      = $ENV{TRACE};
@@ -64,55 +64,80 @@ our @EXPORT_OK = qw(
   &allows_focus
 );
 
+=pod
+##optimization attempt
+#bit masks 1 = number type in db
+#          2 = integer
+#          4 = float
+#          8 = "numeric" type 
+our $MASKF = 4;
+our $MASKDB = 1;
+our $MASKI = 2;
+our $MASKN = 8;
+our %DTNAMES = (
+    'FLOAT'      => 5,
+    'SMALLFLOAT' => 5,
+    'REAL'       => 5,
+    'NUMERIC'    => 9,
+    'DECIMAL'    => 13,
+    'DEC'        => 13,
+    'INTEGER'    => 3,
+    'INT'        => 3,
+    'SMALLINT'   => 3,
+    'MONEY'      => 4, 
+    'SERIAL'     => 2,
+);
+=cut
+
 # Field ctor
 sub new {
     my $class = shift;
 
     bless my $self = {
-        line            => undef,
+#        line            => undef,
         field_tag       => undef,
-        table_name      => undef,
-        column_name     => undef,
-        join_table      => undef,    # lookup fields objs
-        join_column     => undef,    # lookup fields objs
-        screen_name     => undef,
-        value           => undef,    # Fields have a value at runtime
-        type            => undef,    # Fields values have a type  at runtime
-        db_type         => undef,    # table.column type in the database
-        size            => undef,
+#        table_name      => undef,
+#        column_name     => undef,
+#        join_table      => undef,    # lookup fields objs
+#        join_column     => undef,    # lookup fields objs
+#        screen_name     => undef,
+#        value           => undef,    # Fields have a value at runtime
+#        type            => undef,    # Fields values have a type  at runtime
+#        db_type         => undef,    # table.column type in the database
+#        size            => undef,
 
         # attributes
-        active_tabcol  => undef, # for joining fields, the active table & column
-        allowing_input => undef,
-        autonext       => undef,
-        comments       => undef,
-        compress       => undef,
-        displayonly    => undef,
-        disp_only_type => undef,
-        subscript_floor     => undef,
-        subscript_ceiling   => undef,
-        downshift           => undef,
-        format              => undef,
-        include             => undef,    # some form of include is defined
-        include_values      => undef,
-        null_ok             => undef,
-        db_null_ok          => undef,
-        invisible           => undef,
-        field_tag_join_hash => undef,
-        lookup_hash         => undef,
-        picture             => undef,
-        noentry             => undef,
-        noupdate            => undef,
-        queryclear          => undef,
-        range_ceiling       => undef,
-        range_floor         => undef,
-        required            => undef,
-        reverse             => undef,
-        right               => undef,
-        upshift             => undef,
-        verify              => undef,
-        wordwrap            => undef,
-        zerofill            => undef,
+#        active_tabcol  => undef, # for joining fields, active table & column
+#        allowing_input => undef,
+#        autonext       => undef,
+#        comments       => undef,
+#        compress       => undef,
+#        displayonly    => undef,
+#        disp_only_type => undef,
+#        subscript_floor     => undef,
+#        subscript_ceiling   => undef,
+#        downshift           => undef,
+#        format              => undef,
+#        include             => undef,    # some form of include is defined
+#        include_values      => undef,
+#        null_ok             => undef,
+#        db_null_ok          => undef,
+#        invisible           => undef,
+#        field_tag_join_hash => undef,
+#        lookup_hash         => undef,
+#        picture             => undef,
+#        noentry             => undef,
+#        noupdate            => undef,
+#        queryclear          => undef,
+#        range_ceiling       => undef,
+#        range_floor         => undef,
+#        required            => undef,
+#        reverse             => undef,
+#        right               => undef,
+#        upshift             => undef,
+#        verify              => undef,
+#        wordwrap            => undef,
+#        zerofill            => undef,
 
     } => ( ref $class || $class );
 
@@ -454,29 +479,28 @@ sub scalar_number_or_letter {
     return undef if !defined($char);
 
     if ( $char    =~ /[-+.0-9]/ ) { return "NUMBER"; }
-    if ( uc $char =~ /[A-Z]/ ) { return "LETTER"; }
+    if ( $char =~ /[A-Z]/i ) { return "LETTER"; }
 
     return undef;
 }
 
 sub is_number {
-
     my $self = shift;
     my $char = shift;
 
-    return undef if !defined($char);
+    return 0 if !defined($char);
 
     return 1 if $char =~ /[-+.0-9]/;
-    return undef;
+    return 0;
 }
 
 sub is_char {
     my $self = shift;
     my $char = shift;
 
-    return undef if !defined($char);
-    return 1 if uc $char =~ /[A-Z]/;
-    return undef;
+    return 0 if !defined($char);
+    return 1 if $char =~ /[A-Z]/i;
+    return 0;
 }
 
 sub is_serial {
@@ -486,7 +510,7 @@ sub is_serial {
         return 1 if $self->{db_type} eq "SERIAL";
     }
 
-    return undef;
+    return 0;
 }
 
 sub get_comments {
@@ -518,44 +542,13 @@ sub set_value {
     my $self  = shift;
     my $value = shift;
 
-#    if ( defined $value ) { undef $value if $value eq ''; }
-#    if (defined $self->{subscript_floor}) {
-#        my $min  = $self->{subscript_floor};
-#        my $max  = $self->{subscript_ceiling};
-#        my @va = split //, $self->{value};
-#        for (my $i = $max-1; $i >= 0; $i--) {
-#            if ($i >= length $self->{value}) {
-#                $va[$i] = ' ';
-#            } else {
-#                last;
-#            }
-#        }
-#        $self->{value} = join ('', @va);
-#        substr($self->{value}, $min-1, $max-$min) = $value;
-#    } else {
-        $self->{value} = $value;
-#    }
+    $self->{value} = $value;
     return $value;
 }
 
 sub get_value {
     my $self = shift;
 
-#    if (defined $self->{subscript_floor}) {
-#        my $min  = $self->{subscript_floor};
-#        my $max  = $self->{subscript_ceiling};
-#        my $val = $self->{value} || '';
-#        my @va = split //, $val;
-#        for (my $i = $max-1; $i >= 0; $i--) {
-#            if ($i >= length $val) {
-#                $va[$i] = ' ';
-#            } else {
-#                last;
-#            }
-#        }
-#        $val = join ('', @va);
-#        return substr( $val, $min - 1, $max-$min )
-#    }
     return $self->{value};
 }
 
@@ -598,7 +591,7 @@ sub display_error_message {
 sub is_any_numeric_db_type {
     my $self = shift;
 
-    my $db_type = uc $self->{db_type};
+    my $db_type = $self->{db_type};
 
     my ( $type, $more ) = split( /\(/, $db_type );
 
@@ -615,14 +608,14 @@ sub is_any_numeric_db_type {
         return 1;
     }
 
-    return undef;
+    return 0;
 }
 
 # bool - true if supports real numbers "m.n" input
 sub is_real_db_type {
     my $self = shift;
 
-    my $db_type = uc $self->{db_type};
+    my $db_type = $self->{db_type};
 
     my ( $type, $more ) = split( /\(/, $db_type );
 
@@ -636,7 +629,7 @@ sub is_real_db_type {
         return 1;
     }
 
-    return undef;
+    return 0;
 }
 
 # bool - true if db field supports natural number input
@@ -655,7 +648,7 @@ sub is_integer_db_type {
         return 1;
     }
 
-    return undef;
+    return 0;
 }
 
 # bool - true if db field supports only decimal input "m.n"
@@ -674,7 +667,7 @@ sub is_numeric_db_type {
         return 1;
     }
 
-    return undef;
+    return 0;
 }
 
 # break apart type info from the db
@@ -687,7 +680,7 @@ sub parse_db_type {
     }
 
     my ( $type, $size, $dc, $more, $mn );
-    my $db_type = uc $self->{db_type};
+    my $db_type = $self->{db_type};
 
     ( $type, $more ) = split( /\(/, $db_type );
 
@@ -789,25 +782,17 @@ sub set_field_type {
     return undef;
 }
 
+#----------------------------------------------------------------------
 # this calls most of the attribute "handle" routines
 sub format_value_for_display {
-
     my $self = shift;
     my $val  = shift;
-    my $pos  = shift;
 
-    return ( $val, $pos, 0 ) if !defined $val;
+    return ( $val, 0 ) if !defined $val || !defined $self->{db_type};
+#warn "format_val_for_display :$val:\n";
 
+#    $val = $self->get_value if $val =~ /^\*+$/;
     my $rc = 0;
-    my ( $tag, $table, $col ) = $self->get_names;
-    my $GlobalUi = $DBIx::Perform::GlobalUi;
-
-    return ( $val, $pos, 0 ) if !defined $self->{db_type};
-    # FIX:  keep this for a while
-#    if ( !defined $self->{db_type} ) {
-#        $self->print;
-#        die "something wrong with db_type for $tag";
-#    }
 
     # default: format numbers to db type
     # FORMAT - FLOAT REAL DECIMAL db_types
@@ -817,42 +802,40 @@ sub format_value_for_display {
         || $self->{db_type} eq 'SMALLFLOAT'
         || $self->{db_type} eq 'REAL' )
     {
-        my $tmp = $val;
-        my @a = split /\./, $tmp;
-        $val = $tmp . '.' . 0
-          if $#a < 1;
-        $GlobalUi->set_screen_value( $tag, $val );
+        $val .= '.0' if $val !~ /\./;
     }
 
-    ( $val, $pos, $rc ) = $self->handle_subscript_attribute( $val, $pos )
-      if defined $self->{subscript_ceiling} && $rc == 0;
-
-#    $rc = $self->handle_verify_joins;
+    ( $val, $rc ) = $self->handle_subscript_attribute( $val )
+      if defined $self->{subscript_ceiling};
 
     # needs much more testing
-    ( $val, $pos, $rc ) = $self->handle_money_attribute( $val, $pos )
+    ( $val, $rc ) = $self->handle_money_attribute( $val )
       if defined $self->{money} && $rc == 0;
 
-    # pretty well exercised
-    ( $val, $pos, $rc ) = $self->handle_shift_attributes( $val, $pos )
-      if ( defined $self->{upshift} || defined $self->{downshift} ) && $rc == 0;
-    ( $val, $pos, $rc ) = $self->handle_picture_attribute( $val, $pos )
-      if defined $self->{picture} && $rc == 0;
+    ( $val, $rc ) = $self->do_picture($val);
+
     if ( defined $self->{format} && $rc == 0 ) {
-        if (   uc $self->{format} eq "MM\/DD\/YYYY"
-            || uc $self->{format} eq "MM\/DD\/YY" )
+        if ( $self->{format} =~ /((^|[^YMD]+)(YY(YY)?|MMM?|DDD?)){3}/i )
         {
-            ( $val, $pos, $rc ) = $self->handle_date_attribute( $val, $pos );
+            ( $val, $rc ) = $self->handle_date_attribute( $val );
         }
         else {
-            $pos = ( length $val );
-            ( $val, $pos, $rc ) = $self->handle_format_attribute( $val, $pos );
+            ( $val, $rc ) = $self->handle_format_attribute( $val );
         }
     }
-    ( $val, $pos, $rc ) = $self->handle_right_attribute( $val, $pos )
-      if defined $self->{right} && defined $rc && $rc == 0;
 
-    return ( $val, $pos, $rc );
+    my $GlobalUi = $DBIx::Perform::GlobalUi;
+    my ( $tag, $table, $col ) = $self->get_names;
+
+    my @w    = $GlobalUi->get_screen_subform_widget($tag);
+    my $conf = $w[0]->{CONF};
+    my $max  = $$conf{COLUMNS};                           # maximum display size
+
+    ( $val, $rc ) = $self->handle_right_attribute( $val, $max )
+      if defined $self->{right} && $rc == 0;
+
+#    $val = '*' x $max if length ($val) > $max;
+    return ( $val, $rc );
 }
 
 # Prepares a value for db operations
@@ -866,8 +849,6 @@ sub format_value_for_database {
     $val = '' if !defined $val;
 
     my $rc = 0;
-    my ( $tag, $table, $col ) = $self->get_names;
-    my $GlobalUi = $DBIx::Perform::GlobalUi;
 
     # test field value
 
@@ -909,64 +890,6 @@ sub format_value_for_database {
     return $rc;
 }
 
-=pod
-# VERIFY JOINS
-# test for {dominant_table} & {dominant_column}
-# if defined, then either set value if dominant
-# or test against dominant value if not dominant
-# 0 if okay
-# undef if not
-
-# status:  needs more testing and tweaking
-sub handle_verify_joins {
-    my $self = shift;
-
-    my $GlobalUi = $DBIx::Perform::GlobalUi;
-    my $fl       = $GlobalUi->get_field_list;
-
-    my ( $tag, $table, $col ) = $self->get_names;
-    my $dom_table = $self->{dominant_table};
-    my $dom_col   = $self->{dominant_column};
-
-    return 0 if !defined $dom_table || !defined $dom_col;
-
-    # if this is the dominant fo, then nothing more is needed
-    return 0 if $table eq $dom_table && $col eq $dom_col;
-
-    my $fo = $fl->get_field_object( $dom_table, $tag );
-
-    my $val     = $self->get_value;
-    my $dom_val = $fo->get_value;
-
-    $val     = '' if !defined $val;
-    $dom_val = '' if !defined $dom_val;
-
-    # invalid
-    return undef if $dom_val ne $val;
-
-    return 0;
-}
-
-# QUERYCLEAR
-# should only be called from do_query
-sub handle_queryclear_attribute {
-    my $self = shift;
-
-    my $GlobalUi = $DBIx::Perform::GlobalUi;
-    my ( $tag, $table, $col ) = $self->get_names;
-
-    my $screen_value = $GlobalUi->get_screen_value($tag);
-
-    return if !defined $screen_value;
-
-    if ( $self->{queryclear} ) {
-        undef $screen_value;
-        $GlobalUi->set_screen_value( $tag, '' );
-    }
-    return;
-}
-=cut
-
 # UPSHIFT / DOWNSHIFT
 sub handle_shift_attributes {
     my $self = shift;
@@ -985,53 +908,29 @@ sub handle_shift_attributes {
 sub handle_right_attribute {
     my $self         = shift;
     my $screen_value = shift;    # complete string
-    my $pos          = shift;    # cursor position in field
+    my $max          = shift;
 
-    my $GlobalUi = $DBIx::Perform::GlobalUi;
-    my ( $tag, $table, $col ) = $self->get_names;
-
-    my @w    = $GlobalUi->get_screen_subform_widget($tag);
-    my $conf = $w[0]->{CONF};
-    my $max  = $$conf{COLUMNS};                           # maximum display size
-
-    return ( $screen_value, $pos, 0 )
-      if !defined $self->{right};
-    return ( $screen_value, $pos, 0 )
+#    return ( $screen_value, 0 )
+#      if !defined $self->{right};
+    return ( $screen_value, 0 )
       if $self->{type} eq 'SERIAL';
 
-    my @v = split //, $screen_value;
-
-    my ( @out, $i, $vpos );
-    $vpos = $#v;
-    for ( $i = $max - 1 ; $i >= 0 ; $i-- ) {
-        if ( $vpos >= 0 ) {
-            $out[$i] = $v[$vpos];
-        }
-        else {
-            $out[$i] = ' ';
-        }
-        $vpos--;
-    }
-    $screen_value = join '', @out;
-    $GlobalUi->set_screen_value( $tag, $screen_value );
-
-    return ( $screen_value, $pos, 0 );
+    $screen_value = sprintf ("%${max}s", $screen_value);
+    return ( $screen_value, 0 );
 }
 
 # SUBSCRIPT
 sub handle_subscript_attribute {
     my $self         = shift;
     my $screen_value = shift;    # complete string
-    my $pos          = shift;    # cursor position in field
 
-    return ( $screen_value, $pos, 0 )
-      if !defined $self->{subscript_floor}
-      || !defined $self->{subscript_ceiling};
-    return ( $screen_value, $pos, 0 )
+#    return ( $screen_value, 0 )
+#      if !defined $self->{subscript_floor}
+#      || !defined $self->{subscript_ceiling};
+    return ( $screen_value, 0 )
       if $self->{type} eq 'SERIAL';
 
-    my $GlobalUi = $DBIx::Perform::GlobalUi;
-    my $tag      = $self->get_field_tag;
+#    my $tag      = $self->get_field_tag;
 
     my $val   = $screen_value;
     my $vsize = 0;
@@ -1044,10 +943,9 @@ sub handle_subscript_attribute {
     if ( $vsize >= $max ) {
         $val = substr( $val, $min - 1, $size ) if defined $val;
     }
-    $GlobalUi->set_screen_value( $tag, $val );
     $self->{value} = $val;    # needs to be set directly
 
-    return ( $val, $pos, 0 );
+    return ( $val, 0 );
 }
 
 # PICTURE
@@ -1069,156 +967,181 @@ sub handle_picture_attribute {
     return ( $val, $pos, -1 )    # no more input
       if $pos > $fsz;
 
-    my $f  = $format[$pos];
-    my $t  = $self->scalar_number_or_letter($val);
-    my $rc = undef;
+    my $rc = 0;
 
-    # lazy testing going on here...
-    if ( uc $f eq '#' ) {
-        $rc = -1 if ( defined $t && $t ne 'NUMBER' );
-        return ( $val, $pos, $rc );
+    my $f  = $format[$pos];
+
+    if ( $f eq '#' ) {
+        $rc = -1 unless $val =~ /\d/;
     }
     elsif ( uc $f eq 'A' ) {
-        $rc = -1 if ( $t ne 'LETTER' );
-        return ( $val, $pos, $rc );
+        $rc = -1 unless $val =~ /[A-Z]/i;
     }
-    elsif ( uc $f eq 'X' ) {    # just return
-        return ( $val, $pos, $rc );
+    return ( $val, $pos, $rc );
+}
+
+sub do_picture {
+    my $self = shift;
+    my $val  = shift;
+    my $undo = shift;         #true if removal of picture characters wanted
+
+    return ($val, 0) if !defined( $self->{picture} );
+
+    my $SPACES = '                    '
+               . '                    '
+               . '                    '
+               . '                    ';
+    my @chars = split (//, $val . $SPACES);
+    my @format = split( //, $self->{picture} );
+    my @outs = split (//, substr($SPACES, 0, @format));
+    my $rc = 0;
+    my ($j, $k) = (0, 0);
+    for (my $i = 0; $i < length($self->{picture}); $i++) {
+        my $f = $format[$i];
+        if ($f =~ /A|X|#/i) {
+            $f = uc $f;
+            my $c = $chars[$j];
+            $j++;
+            if (!$undo && (   ($f eq '#' && $c !~ /[\d\s]/)
+                           || ($f eq 'A' && $c !~ /[A-Z\s]/i)) ) {
+                $rc = -1;
+                last;
+            }
+            $outs[$k] = $c;
+            $k++;
+        } else {
+            if ($undo) {
+                $j++;
+            } else {
+                $outs[$k] = $f;
+                $k++;
+            }
+        }
     }
-    else {                      # jump over non-format chars
-        $pos++;
-        return ( $val, $pos, $rc );
-    }
+    my $out = join ('', @outs);
+    return ($out, $rc);
+}
+sub is_picture_char {
+    my $self = shift;
+    my $pos = shift;
+    return 0 unless defined ($self->{picture});
+    my @format = split( //, $self->{picture} );
+    return 0 if $pos > $#format || $pos < 0;
+    return 0 if $format[$pos] =~ /[AX#]/;
+    return 1;
 }
 
 # DATE
 sub handle_date_attribute {
     my $self         = shift;
     my $screen_value = shift;    # complete string
-    my $pos          = shift;    # cursor position in field
 
-    return ( $screen_value, $pos, -1 )
-      if !defined $self->{format};
+#    return ( $screen_value, -1 )
+#      if !defined $self->{format};
+    my @MONTHNAME = ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec');
+    my @DAYNAME = ('Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat');
+    my @MAXDAY = (0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31);
 
-    my $max      = $self->{size};
-    my $GlobalUi = $DBIx::Perform::GlobalUi;
-    my ( $tag, $table, $col ) = $self->get_names;
+    my ( $m, $d, $y ) = (0, 0, 0);
 
-    my ( $m, $d, $y, $tmp ) = undef;
-    ( $m, $d, $y ) = split /\//, $screen_value;
+    my $format = $self->{format};
+    $format =~ s/DDD/KKK/g;  # using 'k' to mean day of the week.
+    $format =~ s/ddd/kkk/g;
+    my $val = $screen_value;
+    my $date = '';
 
-    return ( $screen_value, $pos, -1 )
-      if !defined $m || !defined $d || !defined $y;
-
-    my $ml = length($m);
-    my $dl = length($d);
-    my $yl = length($y);
-
-    return ( $screen_value, $pos, -1 )
-      if !$self->is_number($m)
-      || !$self->is_number($d)
-      || !$self->is_number($y);
-
-    return ( $screen_value, $pos, -1 )
-      if ( $ml == 0 || $ml > 2 )
-      || ( $dl == 0 || $dl > 2 )
-      || ( $yl == 0 || $yl > 4 );
-
-    if ( uc $self->{format} eq "MM\/DD\/YYYY" ) {
-        $m = '0' . $m if $ml == 1;
-        $d = '0' . $d if $dl == 1;
-        if ( $yl == 1 ) {
-            $y = '200' . $y;
+    do {
+        $date .= $1 if ($format =~ s/^([^YMD]+)//i);
+        if ($format =~ s/^YY(YY)?//i) {
+            my $yp = $1;
+            $val =~ s/^\D*//;
+            $val =~ s/^(\d+)//;
+            $y = $1;
+#FIX:  this introduces a "Y21C" bug
+            $y += 2000 if ($y >= 0 && $y < 100 && $yp);
+            $date .= $y;
         }
-        elsif ( $yl == 2 ) {
-            $y = '20' . $y;
+        if ($format =~ s/^MM//i) {
+            $val =~ s/^\s*//;
+            $val =~ s/^(\D+)//;
+            my $mn = $1;
+            if ($mn) {
+                for ($m = 12; $m > 0; $m--) {
+                    my $i = $m - 1;
+                    last if $mn =~ /$MONTHNAME[$i]/i;
+                }
+            } else {
+                $val =~ s/^(\d+)//;
+                $m = '0' . $1;
+                $m =~ s/.*(\d\d)$/$1/;
+            }
+            return ( $screen_value, -1) if ($m < 1 || $m > 12);
+            $mn = $m;
+            $mn = $MONTHNAME[$m] if $format =~ s/^m//;
+            $mn = uc $MONTHNAME[$m] if $format =~ s/^M//;
+            $date .= $mn;
         }
-        elsif ( $yl == 3 ) {
-            $y = '2' . $y;
+        if ($format =~ s/^DD//) {
+            $val =~ s/^\D*//;
+            $val =~ s/^(\d+)//;
+            $d = '0' . $1;
+            return ( $screen_value, -1) if ($d < 1 || $d > 31);
+            $d =~ s/.*(\d\d)$/$1/;
+            $date .= $d;
         }
-        elsif ( $yl == 4 ) {
-            $y = $y;
-        }
-        else {
-            warn "something wrong with date field";
-        }
+    } until ($format !~ /YY|MM|DD/i);
 
-        $tmp = $m . '/' . $d . '/' . $y;
-        my $len = length($tmp);
+#check for valid date
+    return ( $screen_value, -1) if ($m > 0 && $d > $MAXDAY[$m] );
+    return ( $screen_value, -1) if ($m == 2 && $d == 29
+                                    && ($y%4!=0 || $y%100==0 && $y%400!=0) );
 
-        return ( $screen_value, $pos, -1 )
-          if ( $len != 10 );
+#day of week -- not implemented
+#    $wkl = $y/400
+#    $date =~ s/KKK/$wku/;
+#    $date =~ s/kkk/$wkl/;
 
-        $GlobalUi->set_screen_value( $tag, $tmp );
-        return ( $screen_value, $pos, 0 );
-    }
-    if ( uc $self->{format} eq "MM\/DD\/YY" ) {
-        $m = '0' . $m if $ml < 2;
-        $d = '0' . $d if $ml < 2;
-        $y = '0' . $y if $yl < 2;
+    return ($date, 0);
 
-        $tmp = $m . '/' . $d . '/' . $y;
-        my $len = length($tmp);
-
-        return ( $screen_value, $pos, -1 )
-          if ( $len != 8 );
-
-        $GlobalUi->set_screen_value( $tag, $tmp );
-        return ( $screen_value, $pos, 0 );
-    }
-    warn "Only: MM\/DD\/YY and MM\/DD\/YYYY date formats are supported.";
-    return ( $screen_value, $pos, 0 );
 }
 
 # FORMAT
 sub handle_format_attribute {
     my $self         = shift;
     my $screen_value = shift;    # complete string
-    my $pos          = shift;    # cursor position in field
 
-    my $max      = $self->{size};
-    my $GlobalUi = $DBIx::Perform::GlobalUi;
     my ( $tag, $table, $col ) = $self->get_names;
 
-    return ( $screen_value, $pos, 0 )
-      if !defined $self->{format};
+#    return ( $screen_value, 0 )
+#      if !defined $self->{format};
 
     # unsupported
-    return ( $screen_value, $pos, 0 )
-      if $self->{type} eq 'DATETIME';
-    return ( $screen_value, $pos, 0 )
-      if $self->{type} eq 'INTERVAL';
-    return ( $screen_value, $pos, 0 )
-      if $self->{type} eq 'SERIAL';
+    return ( $screen_value, 0 )
+      if ( $self->{type} eq 'DATETIME'
+        || $self->{type} eq 'INTERVAL'
+        || $self->{type} eq 'SERIAL');
 
     # FLOAT, INT and REAL
 
-    $screen_value = $self->get_value;
-    $screen_value = '' if !defined $screen_value;
+#perhaps should return an error, but instead are stripping out bad chars
+    $screen_value =~ tr/0-9.+-//cd;
+    $screen_value =~ tr/-//d if $self->{format} !~ /-/;
 
-    my ( $tout, $hashcnt, @vm, @vn, @fm, @fn, @tmp );
+    my $t = 32 - length $self->{format};
+    my ($frac) = $self->{format} =~ /\.([#&]*)/;
+    my $f = length $frac;
+    my $val = sprintf("%32.${f}f", $screen_value);
+    $val =~ s/^\s{$t}//;
+    for (my $i = length ($self->{format})-1; $i >= 0; $i--) {
+        my $c = substr($self->{format}, $i, 1);
+        substr($val, $i, 1) = $c if $c !~ /[#&-.]/;
+    }
+    return ( $val, 0);
+
+=pod
+    my ( $tout, @vm, @vn, @fm, @fn, @tmp );
     my ( @out, @mout, @nout, $out, $mout, $nout, $i, $vpos );
-
-    my @values = split //, $screen_value;
-    my @format = split //, $self->{format};
-    my $flen = length( $self->{format} );
-    my $slen = length($screen_value);
-
-    # redraw the field if re-entering it
-    if ( $slen > $pos ) {
-        my @stmp = split /\./, $screen_value;
-        $screen_value = $stmp[0];
-    }
-
-    # get the number of "# - &"
-    for ( my $i = 0 ; $i < $flen ; $i++ ) {
-        my $c = $format[$i];
-        $hashcnt++
-          if $c eq '#'
-          || $c eq '-'
-          || $c eq '&';    # these chars appear in format strings in optifacts
-                           # ".per" files,  but are ignored by sperform
-    }
 
     @tmp = split /\./, $screen_value;
     if ( defined $tmp[1] ) {
@@ -1231,34 +1154,28 @@ sub handle_format_attribute {
     }
     undef @tmp;
     @tmp = split /\./, $self->{format};
+    @fm = split //, $tmp[0];
     if ( defined $tmp[1] ) {
-        @fm = split //, $tmp[0];
         @fn = split //, $tmp[1];
-    }
-    else {
-        @fm = split //, $tmp[1];
-        @fn = ();
     }
 
     $vpos = $#vm;
     for ( $i = $#fm ; $i >= 0 ; $i-- )
     {    # treat '-' and '&' as '#' -  not clear what these chars mean
-        if ( ( $fm[$i] eq '#' || $fm[$i] eq '-' || $fm[$i] eq '&' )
-            && $vpos >= 0 )
+        my $c = $fm[$i];
+        if ( $c eq '#' || $c eq '-' || $c eq '&' )
         {
-            my $num = $vm[$vpos];
-            if ( !$self->is_number($num) ) {
-                return ( $screen_value, $pos, -1 );
+            if ($vpos >= 0) {
+                my $num = $vm[$vpos];
+                if ( !$self->is_number($num) ) {
+                    return ( $screen_value, -1 );
+                }
+                $mout[$i] = $num;
+            } else {
+                $mout[$i] = ' ';
             }
-            $mout[$i] = $num;
-        }
-        elsif ( ( $fm[$i] eq '#' || $fm[$i] eq '-' || $fm[$i] eq '&' )
-            && $vpos < 0 )
-        {
-            $mout[$i] = ' ';
-        }
-        elsif ( $fm[$i] ne '#' && $fm[$i] ne '-' && $fm[$i] ne '&' ) {
-            $mout[$i] = $fm[$i];
+        } else {
+            $mout[$i] = $c;
         }
         $vpos--;
     }
@@ -1268,33 +1185,29 @@ sub handle_format_attribute {
         if ( $fn[$i] eq '#' && $vpos <= $#vn ) {
             my $num = $vn[$vpos];
             if ( !$self->is_number($num) ) {
-                return ( $screen_value, $pos, -1 );
+                return ( $screen_value, -1 );
             }
             $nout[$i] = $vn[$vpos];
         }
-        elsif ( ( $fn[$i] eq '#' || $fn[$i] eq '-' || $fn[$i] eq '&#' )
+        elsif ( ( $fn[$i] eq '#' || $fn[$i] eq '-' )
             && $vpos > $#vn )
         {
             $nout[$i] = '0';
         }
-        elsif ( $fn[$i] ne '#' || $fn[$i] ne '-' || $fn[$i] ne '&#' ) {
+        else {
             $nout[$i] = $fn[$i];
         }
         $vpos++;
     }
 
     # calculate if too many to display
-    my $fl  = length $self->{format};
-    my $nfl = $fl - $hashcnt;           # number of non-numeric chars
-    my $tot = $slen + $nfl;
 
     $mout = join '', @mout;
     $nout = join '', @nout;
     $out = $mout . '.' . $nout;
 
-    $GlobalUi->set_screen_value( $tag, $out );
-    return ( $out, $pos, 0 );
-
+    return ( $out, 0 );
+=cut
 }
 
 # FORMAT - money
@@ -1302,19 +1215,13 @@ sub handle_format_attribute {
 sub handle_money_attribute {
     my $self         = shift;
     my $screen_value = shift;    # complete string
-    my $pos          = shift;    # cursor position in field
 
-    return ( $screen_value, $pos, 0 )
-      if !defined( $self->{money} );    # this is not real
-
-    my $GlobalUi = $DBIx::Perform::GlobalUi;
-    my ( $tag, $tbl, $col ) = $self->get_names;
+#warn "handle_money_attr: $screen_value\n";
 
     if ( $self->{db_type} eq 'MONEY' ) {
         $screen_value = '$' . $screen_value;
-        $GlobalUi->set_screen_value( $tag, $screen_value );
     }
-    return ( $screen_value, $pos, 0 );
+    return ( $screen_value, 0 );
 }
 
 # checks the field value against the attributes
@@ -1360,6 +1267,7 @@ sub validate_input {
 
     #INCLUDE
     if ( defined( $self->{include} ) ) {
+        $value =~ s/\s*$// if $value;
 
         # INCLUDE - list of values
         my $inc_vals = $self->{include_values};
@@ -1375,29 +1283,17 @@ sub validate_input {
         # INCLUDE - numeric range
         my $ceiling = $self->{range_ceiling};
         my $floor   = $self->{range_floor};
-        if ( defined $ceiling && defined $floor ) {
-
-            if ( ( $value < $floor ) || ( $value > $ceiling ) ) {
-                warn "TRACE: leaving validate_input on fail\n" if $::TRACE;
-                $GlobalUi->display_error('th44s');
-                $GlobalUi->change_focus_to_field_in_current_table($tag);
-                return -1;
+        if ( defined $ceiling && defined $floor && defined $value ) {
+            if ( $value ne '') {
+                if ( ( $value < $floor ) || ( $value > $ceiling ) ) {
+                    warn "TRACE: leaving validate_input on fail\n" if $::TRACE;
+                    $GlobalUi->display_error('th44s');
+                    $GlobalUi->change_focus_to_field_in_current_table($tag);
+                    return -1;
+                }
             }
         }
     }
-
-=pod
-    # QUERYCLEAR
-    if ( defined( $self->{queryclear} ) ) {
-        warn "QUERYCLEAR not supported.";
-    }
-
-    # DOMINANT TABLE/COLUMN
-    if ( defined $self->{dominant_table} ) {
-$self->print;
-exit;
-    }
-=cut
 
     warn "TRACE: leaving validate_input on success\n" if $::TRACE;
     return 0;

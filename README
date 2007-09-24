@@ -95,7 +95,7 @@ Alias and Owner in the Table section (p. 2-18).
 Color, Invisible, Verify, Wordwrap, Zerofill attributes.
 Allowing Input in the Displayonly attribute (p. 2-24).
 Delimiters, On Beginning, and On Ending instructions.
-Today, Current in the Default attribute.
+Current in the Default attribute.
 Today, Current, Max, Min, Count, Total, and Average in the Let instruction.
 Datetime and Interval data types (p. 3-11).
 All the returns (lngreturn, floreturn, etc.) except intreturn (p. 6-21).

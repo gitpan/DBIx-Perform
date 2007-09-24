@@ -104,19 +104,24 @@ sub input_key {
     $max   = $fo->{size} if $mode ne 'query';
 #    $value = $fo->get_value;
 
-    # reinitialize the field if re-entering it with a value at pos 0
-    if (
-           $pos == 0
-        && $value ne ''
-        && (   defined $fo->{format}
-            || defined $fo->{right}
-            || defined $fo->{picture} )
-      )
-    {
-        if ( !defined $self->is_FSKEY($in) ) {
-            $value = '';
-            $fo->set_value($value);
-        }
+#    # reinitialize the field if re-entering it with a value at pos 0
+#    if (
+#           $pos == 0
+#        && $value ne ''
+#        && (   defined $fo->{format}
+#            || defined $fo->{right}
+#            || defined $fo->{picture} )
+#      )
+#    {
+#        if ( !defined $self->is_FSKEY($in) ) {
+#            $fo->set_value('');
+#            $value = '';
+#        }
+#    }
+
+    if (defined $fo->{picture}) {
+        my ($pic, $rc) = $fo->do_picture('');
+        $value .= substr($pic, length($value));
     }
 
     my @string = split( //, $value );
@@ -124,43 +129,56 @@ sub input_key {
     # Process special keys
     if ( $in eq "\cX" ) {    # ctrl-x = delete char forward
         return if $ro;
-        my $len = length($value);
-        if ( $pos < $len ) {
-            splice( @string, $pos, 1 );
-            $value = join '', @string;
-            $fo->set_value($value);
+        my ($val2, $rc) = $fo->do_picture($value, 1);
+        my $len = length($val2);
+        my $pos2 = $pos;
+        if (defined $fo->{picture}) {
+            my $partpic = substr($fo->{picture}, 0, $pos);
+            $pos2 = $partpic =~ tr/[AX#]//;
         }
-        elsif ( $pos == 1 && $len == 1 ) {
-            splice( @string, 0, 1 );
-            $value = join '', @string;
-            $fo->set_value($value);
+        @string = split( //, $val2 );
+        if ( $pos2 < $len && $len > 0 ) {
+            splice( @string, $pos2, 1 );
+            $val2 = join '', @string;
+            $fo->set_value($val2);
+            ($value, $rc) = $fo->do_picture($val2);
         }
         else {
             beep;
         }
     }
+    elsif ( $in eq KEY_UP || $in eq KEY_DOWN ) {
+        $$conf{'EXIT'} = 1;
+    }
     elsif ( $in eq KEY_RIGHT ) {
-        if ( ++$pos >= length($value) ) {
-            $pos = 0;
-            $$conf{'EXIT'} = 1;
-        }
+        do {
+            if ( ++$pos >= length($value) ) {
+                $pos = 0;
+                $$conf{'EXIT'} = 1;
+            }
+        } while ($fo->is_picture_char($pos));
     }
     elsif ( $in eq KEY_LEFT or $in eq KEY_BACKSPACE or $in eq "\cH" ) {
-        if ( --$pos < 0 ) {
-            $pos = 0;
-            $$conf{'EXIT'} = 1;
-        }
+        do {
+            if ( --$pos < 0 ) {
+                $pos = 0;
+                $$conf{'EXIT'} = 1;
+            }
+        } while ($fo->is_picture_char($pos));
     }
     elsif ( $in eq KEY_HOME ) {
         $pos = 0;
+        while ($fo->is_picture_char($pos)) { $pos++; }
     }
     elsif ( $in eq KEY_END ) {
         $pos = length($value);
+        while ($fo->is_picture_char($pos)) { $pos--; }
     }
     elsif ( $in eq "\cD" ) {    # clear to end of field
         splice( @string, $pos, $#string - $pos + 1 );
         $value = join( '', @string );
-        $fo->set_value($value);
+        my ($val2, $rc) = $fo->do_picture($value, 1);
+        $fo->set_value($val2);
     }
     elsif ( $in eq "\cA" ) {
         $OVERWRITE = !$OVERWRITE;
@@ -176,12 +194,23 @@ sub input_key {
             return;
         }
 
+        if ($$conf{FIRSTKEY} && $fo->is_any_numeric_db_type) {
+            my $pos2 = $pos;
+            if (defined $fo->{picture}) {
+                my $partpic = substr($fo->{picture}, 0, $pos);
+                $pos2 = $partpic =~ tr/[AX#]//;
+            }
+            $value = substr($value, 0, $pos2);
+            $fo->set_value($value);
+        }
+        $$conf{FIRSTKEY} = 0;
+
         # UPSHIFT / DOWNSHIFT attributes
         $in = $fo->handle_shift_attributes($in);
 
         # PICTURE attribute
         # this is executed here and in onExit (below)
-        my $rc = undef;
+        my $rc;
         ( $in, $pos, $rc ) = $fo->handle_picture_attribute( $in, $pos );
         if ( $rc != 0 ) { beep; return; }
 
@@ -196,32 +225,27 @@ sub input_key {
                 return;
             }
             $value .= $in;
-            $fo->set_value($value);
         }
         elsif ($OVERWRITE) {
             splice( @string, $pos, 1, $in );
             $value = join( '', @string );
-            $fo->set_value($value);
         }
-        elsif ( $pos == 0 && $len == 1 ) {
-            splice( @string, 0, 1, $in );
-            $value = join( '', @string );
-            $fo->set_value($value);
-
-        }
-        elsif ( $pos > 0 ) {
+        else { #if ( $pos > 0 ) {
+            my ($val2, $rc) = $fo->do_picture($value, 1);
+            @string = split( //, $val2 );
+            my $pos2 = $pos;
+            if (defined $fo->{picture}) {
+                my $partpic = substr($fo->{picture}, 0, $pos);
+                $pos2 = $partpic =~ tr/[AX#]//;
+            }
             @string =
-              ( @string[ 0 .. ( $pos - 1 ) ], $in,
-                @string[ $pos .. $#string ] );
-            $value = join( '', @string );
-            $fo->set_value($value);
-
-            # Insert the character at the beginning of the string
+              ( @string[ 0 .. ( $pos2 - 1 ) ], $in,
+                @string[ $pos2 .. $#string ] );
+            $val2 = join( '', @string );
+            ($value, $rc) = $fo->do_picture($val2);
         }
-        else {
-            $value = "$in$value";
-            $fo->set_value($value);
-        }
+        my ($val2, $rc) = $fo->do_picture($value, 1);
+        $fo->set_value($val2);
 
         # Increment the cursor's position
         #++$pos;
@@ -233,7 +257,9 @@ sub input_key {
             beep;
             return;
         }
-        ++$pos;
+        do {
+            ++$pos;
+        } while ($fo->is_picture_char( $pos ));
     }
 
     # Save the changes
@@ -263,6 +289,8 @@ sub execute {
 
     $self->draw( $mwh, 1 );
 
+    $$conf{FIRSTKEY} = 1;
+
     $key = "\t";    #default keypress, for AUTONEXT
     while (1) {
         last if $$conf{'EXIT'};    # ADDED
@@ -272,7 +300,7 @@ sub execute {
 
             # replace with KEY_FSTAB when available
             if ( defined $self->is_FSKEY($key) ) {
-                ( $v, $pos, $rc ) = $self->_onExit;
+                $rc = $self->_onExit;
             }
             else { $rc = 0; }
             if ( defined $regex ) {
@@ -291,6 +319,7 @@ sub execute {
     }
 
     $$conf{CURSORPOS} = 0;
+    warn "TRACE: leaving Curses::Widgets::execute\n" if $::TRACE;
     return $key;
 }
 
@@ -367,23 +396,30 @@ sub _onExit {
     my $table    = $GlobalUi->get_current_table_name;
     my $fl       = $GlobalUi->get_field_list;
     my $fo       = $fl->get_field_object( $table, $tag );
+    my $form     = $GlobalUi->get_current_form;
+    my $subform  = $form->getSubform('DBForm');
+    my $mode     = $subform->getField('editmode');
 
     return unless defined $fo;
     my ( $value, $pos ) = @$conf{qw(VALUE CURSORPOS )};
+    ($value, $rc) = $fo->do_picture($value, 1) if $mode !~ /^q/i;
     $value = $fo->get_value if defined $self->{value};
 
     return ( $value, $pos, 0 )
       if length($value) == 0;
 
     # db field  may need numeric values
-    my $need_number = $fo->is_any_numeric_db_type;
-    my $is_number   = $fo->is_number($value);
+#    my $need_number = $fo->is_any_numeric_db_type;
+#    my $is_number   = $fo->is_number($value);
 
 #    if ( !$is_number && $need_number ) {
 #        $GlobalUi->display_error('er11d');
 #        return ( $value, $pos, -1 );
 #    }
-    return $fo->format_value_for_display( $value, $pos );
+    my $rc;
+    ($value, $rc) = $fo->format_value_for_display( $value ) if $mode !~ /^q/i;
+    $GlobalUi->set_screen_value( $tag, $value);
+    return $rc;
 }
 
 1;

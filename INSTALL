@@ -4,7 +4,9 @@ Need a working installation of Informix.
 
 Downloads
 ---------
-All downloads are from http://search.cpan.org/CPAN/authors/id/
+ncurses         http://ftp.gnu.org/pub/gnu/ncurses/ncurses-5.6.tar.gz
+
+The downloads below are from http://search.cpan.org/CPAN/authors/id/
 
 Curses		G/GI/GIRAFFED/Curses-1.15.tgz
 CursesWidgets	C/CO/CORLISS/CursesWidgets-1.997.tar.gz
@@ -28,6 +30,7 @@ version         J/JP/JPEACOCK/version-0.7203.tar.gz
 
 Optional:
 Sort-Versions	E/ED/EDAVIS/Sort-Versions-1.5.tar.gz
+Time-Hires      J/JH/JHI/Time-HiRes-1.9707.tar.gz
 
 Commands in gory detail
 -----------------------
@@ -157,6 +160,35 @@ The system is HP-UX 11.11, with Informix (IBM Informix Dynamic Server
 Version 10.00.HC4) in /usr/informix, and perl 5.6.1.
 gcc 3.4.6 and ncurses are installed in /usr/local/bin.
 
+Ncurses can be built with the native compiler.  But, must make one change.
+NCURSES_INLINE does not work with the native compiler.  The configuration
+script detects that the compiler does support "inline" and sets
+NCURSES_INLINE=inline, which causes a compiler error on any line
+in the ncurses source that contains NCURSES_INLINE.
+Editing the ncurses configuration script to remove the test for inline is
+one way around this problem.
+
+
+$ gzip -d < ncurses-5.6.tar.gz
+$ cd ncurses-5.6
+
+Delete these lines from "configure":
+
+if test "$ac_cv_c_inline" != no ; then
+        cat >>confdefs.h <<\EOF
+#define CC_HAS_INLINE_FUNCS 1
+EOF
+
+        NCURSES_INLINE=inline
+fi
+
+$ ./configure;make;make
+$ su
+# make install
+$ cd ..
+
+
+
 # cd /usr/include
 # rm curses.h ncurses.h form.h menu.h panel.h
 
@@ -175,7 +207,7 @@ $ cd ..
 $ gzip -d < Scalar-List-Utils.tar.gz | tar xf -
 $ cd Scalar-List-Utils
 $ perl Makefile.PL
-edit line 282 of Makefile, changing
+For HP-UX "make", edit line 282 of Makefile, changing
   XSUBPPARGS +=  -typemap mytypemap
 to
   XSUBPPARGS = $(XSUBPPARGS) -typemap mytypemap
@@ -280,12 +312,9 @@ $ su
 =========================================================================
 
 USAGE
-"make install" copies scripts "pformbld" and "perform" to /usr/local/bin.
+"make install" installs scripts "pformbld" and "perform".
 To run a Perform script "example.per", 1st have appropriate environment
-variables set for the database.  If the environment is not set may get an
-error message similar to:
-
-install_driver(PG) failed: Can't locate DBD/PG.pm in @INC ...
+variables set for the database.  The crucial one is DB_NAME.
 
 
 Here is an example of the environment variables needed for Informix 7.2:
@@ -303,9 +332,10 @@ $ export DBD_INFORMIX_USERNAME2=informix
 Might also need to set the terminal:
 $ export TERM=vt100
 
-And these are optional (either blue or black give good results):
+And these are optional:
 $ export BGCOLOR=blue
 $ export FIELDBGCOLOR=blue
+$ export DBDATE="Y4MD-"
 
 
 The 2nd step need only be done once.  Create "example.yml" with:
@@ -334,25 +364,6 @@ Known problems
 problems
 --------
 
-The Table button does not change screens.  This is, of course, only
-relevant on scripts that have 2+ screens and 2+ tables.  It's not always
-clear why sperform chooses a particular screen.  Going to the first screen
-that has a field that is associated with the newly focused table results
-in picking the same screen as sperform in most cases but not all.  In
-the case that differed, the script has a field on the first screen
-that joins the 2 tables in question, then the rest of the fields on that
-screen are associated with the 1st table.  The first field associated with
-only the 2nd table is on the 2nd screen.  There is also an instruction that,
-upon an attempt to manipulate the 2nd table, moves the focus to a field on
-the 2nd screen.  And lastly, the field on the first screen that joins the
-2 tables is duplicated on the 2nd screen.
-So there are at least 3 alternatives that would result
-in landing on the 2nd screen-- go to the first screen containing a field
-associated with only the 2nd table, or go to the screen that contains the
-first field entered when the user tries to manipulate the 2nd table, or
-go to the first screen that contains a field associated with the
-2nd table that is not duplicated on all previous screens.
-
 On scripts that have "forests", (meaning, 2 or more groups of tables which
 are not joined to one another in any of the field associations), and which
 lookup data from the same tables, there can be "spillover".  That is,
@@ -380,18 +391,8 @@ f3 = t2.c3
 When the user enters data in f1 and f2, the program should fill in f3,
 but does not.
 
-Concurrency checks.  Seems the original utility at times checks the
-data it retrieves to make sure it hasn't been changed by anything else,
-such as another invocation of the utility operating on the same tables.
-Hard to know when these checks are made, but is more often than upon
-trying to do Update or Add.  Checking is also done when the user tries
-Next or Previous.  Currently, no checking is done.  Presumably the
-database will catch all such problems, but this should be tested more.
-
 minor problems
 --------------
-Comments are converted to uppercase.
-
 After a big slow query, the next query is slow.  After fetching something
 like 100,000 rows, the next query will be as slow even if it only fetches
 1000 rows.  If instead, only the smaller query is run, it will be fast.
@@ -404,6 +405,7 @@ another table to do a lookup.  If the looked up table has many rows,
 then the process can be slow.
 
 May have different behavior on fields with the "picture" attribute.
+Sperform does not do the "picture" attribute correctly.
 
 trivial problems
 ----------------
@@ -415,9 +417,6 @@ and returns to the main menu.
 Reverse color fields on any screen but the first aren't always displayed
 reversed.  Depends on the TERM environment variable.  (And yet the reverse
 coloring always works on the first screen?)
-
-On the main menu, up and down arrow keys should go to the first menu item
-on the previous and next menu row respectively.  DBIx::Perform does nothing.
 
 When running under another user acct, somehow Perl was including my
 sandbox in its libraries path, @INC.  Worked around this by removing

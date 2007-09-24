@@ -4,7 +4,7 @@ use base 'Exporter';
 use Data::Dumper;
 use DBI;
 
-our $VERSION = '0.691';
+our $VERSION = '0.693';
 
 our @EXPORT_OK = qw(	&new
   &is_empty
@@ -37,6 +37,8 @@ sub new {
     my $class = shift;
 
     bless my $self = {
+        limit => 2000,
+        limitinc => 2000,
         size => 0,
         iter => 0,
         rows => undef,
@@ -110,7 +112,27 @@ sub next_row {
 
     $self->{iter} = $self->{size}-1 if $self->{iter} >= $self->{size};
 
+    $self->{limit} = 2000 if $self->{limit} < 2000;
+    $self->{limitinc} = 2000 if $self->{limitinc} < 2000;
+    if ($self->{iter} >= $self->{limit}) {
+        $self->increase_limit;
+    }
+
     return $self->{rows}->[ $self->{iter} ];
+}
+
+sub increase_limit {
+    my $self = shift;
+    if (defined $self->{sth}) {
+        my $rowcache;
+        while (@{$rowcache=$self->{sth}
+                 ->fetchall_arrayref([], $self->{limitinc})
+                 || [] }
+               && $self->{limit} <= $self->{iter} ) {
+            $self->{limit} += $self->{limitinc};
+            push @{$self->{rows}}, @$rowcache;
+        }
+    }
 }
 
 sub previous_row {
@@ -141,17 +163,32 @@ sub get_value_at {
     return $self->{rows}->[ $self->{iter} ];
 }
 
+sub add_row_to_end {
+    my $self = shift;
+    my $row  = shift;
+
+    return undef if !defined($row);
+
+    push @{$self->{rows}}, $row;
+    $self->{iter} = 0;
+    ++$self->{size};
+    ++$self->{limit};
+
+    return $self->{rows}->[0];
+}
+
 sub add_row {
     my $self = shift;
     my $row  = shift;
 
     return undef if !defined($row);
 
-    $self->{rows}->[ $self->{size} ] = $row;
-    $self->{iter} = $self->{size};
+    unshift @{$self->{rows}}, $row;
+    $self->{iter} = 0;
     ++$self->{size};
+    ++$self->{limit};
 
-    return $self->last_row;
+    return $self->{rows}->[0];
 }
 
 sub list_cursor {
@@ -168,7 +205,9 @@ sub remove_row {
     my $i = $self->{iter};
 
     --$self->{size};
-    while ( $i < $self->{size} ) {
+    --$self->{limit};
+    $self->{limit} = $self->{size} if $self->{limit} > $self->{size};
+    while ( $i < $self->{limit} ) {
         $self->{rows}[$i] = $self->{rows}[$i+1];
         $i++;
     }
@@ -220,13 +259,15 @@ sub replace_row {
     return $self->current_row;
 }
 
-sub last_row {
-    my $self = shift;
-
-    $self->{iter} = $self->{size}-1;
-
-    return $self->{rows}->[ $self->{iter} ];
-}
+#If last_row fucntion wanted,
+# needs changing to handle "limit" added on 2007 Aug 17.
+#sub last_row {
+#    my $self = shift;
+#
+#    $self->{iter} = $self->{size}-1;
+#
+#    return $self->{rows}->[ $self->{iter} ];
+#}
 
 sub first_row {
     my $self = shift;
@@ -241,37 +282,57 @@ sub list_size {
     return $self->{size};
 }
 
-sub stuff_list {
+sub get_count {
     my $self  = shift;
     my $query = shift;
     my $vals  = shift;
     my $db    = shift;
 
+    my $sth = $db->prepare($query);
+    if ($sth) {
+        if (defined $sth->execute(@$vals)) {
+            if ($::TRACE) {
+                warn "$query\n";
+                warn join (", ", @$vals) . "\n" if defined $vals;
+            }
+            $self->{size} = $sth->fetchrow_array;
+        }
+    }
+}
+
+#2007 Aug: added "q_cnt", which is a 2nd query that the calling function
+# must provide.  q_cnt must be a "select count(*) from ..." query.
+sub stuff_list {
+    my $self  = shift;
+    my $db    = shift;
+    my $q_cnt = shift;
+    my $query = shift;
+    my $vals  = shift;
+
     my $GlobalUi = $DBIx::Perform::GlobalUi;
-    my @vals     = @$vals;
 
     $self->clear_list;
 
-    my $sth = $db->prepare_cached($query);
+    $self->{sth} = $db->prepare_cached($query);
 
-    unless ($sth) {
-        $GlobalUi->display_comment("DB Error on prepare");
-        $GlobalUi->display_error("$DBI::errstr");
-        return undef;
+    if ($self->{sth}) {
+        my @vals1 = ();
+        @vals1 = @$vals if $query =~ /\?/;
+        if ( defined( $self->{sth}->execute(@vals1) ) ) {
+            $self->{rows} = $self->{sth}->fetchall_arrayref([], $self->{limit});
+            $self->{size} = @{$self->{rows}};
+            if ($self->{size} >= $self->{limit}) {
+                $self->{size} = $self->get_count($q_cnt, \@$vals, $db);
+            }
+
+            $self->{iter} = 0;
+            return $self->first_row;
+        }
     }
 
-    unless ( defined( $sth->execute(@vals) ) ) {
-        $GlobalUi->display_comment("DB Error on prepare");
-        $GlobalUi->display_error("$DBI::errstr");
-        return undef;
-    }
-
-    while ( my $ref = $sth->fetchrow_hashref() ) {
-        $self->add_row($ref);
-    }
-
-    $self->{iter} = 0;
-    return $self->first_row;
+    $GlobalUi->display_comment("DB Error on prepare");
+    $GlobalUi->display_error("$DBI::errstr");
+    return undef;
 }
 
 sub clear_list {
@@ -281,6 +342,9 @@ sub clear_list {
     $self->{iter} = 0;
 
     $self->{rows} = ();
+    $self->{sth}  = 0;
+    $self->{limit} = 2000;
+    $self->{limitinc} = 2000;
 }
 
 sub clone_list {

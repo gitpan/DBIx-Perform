@@ -317,7 +317,7 @@ our $grammar = <<'_EOGRAMMAR_';
          {
            return $::res;
          } 
-         | field_tag "=" verify_field table_name "." column_name subscript_field_description
+         | field_tag "=" verify_field table_name "." column_name subscript_field_description field_description_list
          {
            return $::res;
          } 
@@ -329,7 +329,7 @@ our $grammar = <<'_EOGRAMMAR_';
          {
            return $::res;
          } 
-         | field_tag "=" verify_field column_name subscript_field_description
+         | field_tag "=" verify_field column_name subscript_field_description field_description_list
          {
             return $::res;
          }

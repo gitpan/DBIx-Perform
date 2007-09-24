@@ -71,7 +71,7 @@ use vars qw(@EXPORT_OK $VERSION %HEADING_WORDS);
 
 BEGIN {
     @EXPORT_OK = qw(digest digest_file convert_per_to_xml convert_per_to_yml );
-    $VERSION   = '0.692';
+    $VERSION   = '0.693';
 
     %HEADING_WORDS =
       map { ( $_, 1 ) } qw(screen tables attributes instructions end);
@@ -97,7 +97,7 @@ descriptor.
 
 =cut
 
-our $VER_DATE = '2007-08-07';
+our $VER_DATE = '2007-09-07';
 
 our $TABLES;
 our $FieldList;
@@ -369,8 +369,8 @@ sub table_post_processing {
     # before expanding field_tag joins
 
     my $list = $field->{include_values};
-    $field->{include_values} = undef;
     if ($list) {
+        $field->{include_values} = undef;
         my @array = split / /, $list;
         foreach my $val (@array) {
             $field->{include_values}->{$val} = 1;
@@ -407,9 +407,8 @@ sub field_tag_joins_post {
     {
         my $tbl = $field->{table_name};
         my $col = $field->{column_name};
-        $field->{verify} = 
-          ($field->{line} =~ /\*\s*$tbl\.$col(\W|$)/)
-          ? 1 : undef;
+        $field->{verify} = 1 if
+          $field->{line} =~ /\*\s*$tbl\.$col(\W|$)/;
     }
 
     # adding the top-level field object for this itteration
@@ -429,12 +428,13 @@ sub field_tag_joins_post {
             my $join_column = $join{$index}->{join_column};
 
             my $new_field = $field->duplicate;
-            $new_field->{field_tag_join_hash} = undef;
+            delete $new_field->{verify};
+            delete $new_field->{line};
+#            $new_field->{field_tag_join_hash} = undef;
             $new_field->{table_name}          = $join_table;
             $new_field->{column_name}         = $join_column;
-            $new_field->{verify} = 
-               ($field->{line} =~ /\*\s*$join_table\.$join_column(\W|$)/)
-               ? 1 : undef;
+            $new_field->{verify} = 1 if
+               ($field->{line} =~ /\*\s*$join_table\.$join_column(\W|$)/);
 
             # expand lookup attributes (if any)  for the new field
             lookup_attributes_post($new_field);
@@ -501,11 +501,11 @@ sub lookup_attributes_post {
 
                 my $new_field = new DBIx::Perform::Field;
 
-                $new_field->{lookup_hash}         = undef;
-                $new_field->{field_tag_join_hash} = undef;
+#                $new_field->{lookup_hash}         = undef;
+#                $new_field->{field_tag_join_hash} = undef;
 
                 $new_field->{field_tag} = lc $k;
-                $new_field->{line}      = "Lookup Field";
+#                $new_field->{line}      = "Lookup Field";
 
                 my %h = %{ $lookup{$k} };
                 foreach my $l ( keys(%h) ) {
@@ -581,6 +581,7 @@ sub make_field_obj {
         $field = displayonly_post_processing($field);
         $field = include_post_processing($field);
     }
+    delete $field->{line};
     return $field;
 }
 

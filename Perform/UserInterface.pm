@@ -14,7 +14,7 @@ use DBIx::Perform::FieldList;
 use base 'Exporter';
 use Data::Dumper;
 
-our $VERSION = '0.692';    # valtech
+our $VERSION = '0.693';    # valtech
 
 # $UserInterface methods
 our @EXPORT_OK = qw(
@@ -636,6 +636,14 @@ sub run {
     $self->add_field_list_to_screens;
 
     $self->compute_joins_by_tag;
+
+#optimization idea
+#    $i--;
+#    for (; $i >= 0; $i--) {
+#        my $form = $app->getForm("Run$i");
+#        my $subform = $form->getSubform('DBForm');
+#        $self->{subforms}->[$i] = $subform;
+#    }
 
     # runtime loop
 
@@ -1286,7 +1294,7 @@ sub capture_master_detail {
             my $d = $ta->[1];
             my %h;
             $h{$m} = $d;
-            $self->{master_detail_list}->add_row( \%h );
+            $self->{master_detail_list}->add_row_to_end( \%h );
         }
     }
 }
@@ -1464,7 +1472,6 @@ sub get_screen_value {
     my $field_tag = shift;
 
     my $app = $self->{app_object};
-    my $fl  = $self->{global_field_list}->clone_list;
     my $formn = $app->getField('form_names');
 
     my $i = 0;
@@ -1473,6 +1480,8 @@ sub get_screen_value {
         last if !defined($form);
 
         my $subform = $form->getSubform('DBForm');
+#        my $subform = $self->{subforms}->[$i];
+#        last if !defined $subform;
         my $w       = $subform->getWidget($field_tag);
 
         return $w->getField('VALUE')
@@ -1551,12 +1560,14 @@ sub set_screen_value {
     my $val       = shift;
     my $app       = $self->{app_object};
 
+#warn "set_screen_val :$val:\n";
     my $scrns = DBIx::Perform::get_screen_from_tag($field_tag);
 
-    warn join (' , ', @$scrns) . "\n" if $::TRACE_DATA;
+#    warn join (' , ', @$scrns) . "\n" if $::TRACE_DATA;
     foreach my $scr (@$scrns) {
         my $form    = $app->getForm("Run$scr");
         my $subform = $form->getSubform('DBForm');
+#        my $subform = $self->{subforms}->[$scr];
         my $w       = $subform->getWidget($field_tag);
         $w->setField( 'VALUE', $val );
     }

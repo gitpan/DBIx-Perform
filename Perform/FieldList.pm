@@ -8,7 +8,7 @@ use DBIx::Perform::Field;
 use base 'Exporter';
 use DBI;
 
-our $VERSION = '0.692';
+our $VERSION = '0.693';
 
 # debug: set (unset) in runtime env
 $::TRACE      = $ENV{TRACE};
@@ -130,7 +130,7 @@ sub add_field {
     my $self  = shift;
     my $field = shift;
 
-    return $self->{list}->add_row($field);
+    return $self->{list}->add_row_to_end($field);
 }
 
 sub list_cursor {
@@ -159,11 +159,11 @@ sub replace_field {
     return $self->{list}->replace_row;
 }
 
-sub last_field {
-    my $self = shift;
-
-    return $self->{list}->last_row;
-}
+#sub last_field {
+#    my $self = shift;
+#
+#    return $self->{list}->last_row;
+#}
 
 sub first_field {
     my $self = shift;
@@ -484,7 +484,8 @@ sub display_defaults_to_screen {
 
         # general default handling
         my $value = $fo->{default};    # default values are set by parser
-        $value = '' if !defined($value);
+#        $value = '' if !defined($value);
+        next if !defined($value);
 
         my ( $tag, $tab, $col ) = $fo->get_names;
 
@@ -496,11 +497,19 @@ sub display_defaults_to_screen {
         }
 
         # handle date format for TODAY
-        $value = POSIX::strftime( "%Y-%m-%d", localtime() )
-          if uc($value) eq 'TODAY';
+#        $value = POSIX::strftime( "%Y-%m-%d", localtime() )
+        if (uc($value) eq 'TODAY') {
+            my $date_format = lc($ENV{DBDATE} || "MDY4/"); #Informix specific?
+            $date_format =~ s/^(.{4})$/$1\//;
+            $date_format =~ s/0//;
+            $date_format =~ s/y4/Y/;
+            $date_format =~ s/y2/y/;
+            $date_format =~ s/(\w)(\w)(\w)(.?)/%$1$4%$2$4%$3/;
+            $value = POSIX::strftime( $date_format, localtime() )
+        }
 
         $fo->set_value($value); # if !defined $fo->get_value;
-        $fo->format_value_for_display( $fo->get_value, 0 );
+        $fo->format_value_for_display( $fo->get_value );
         $ui->set_screen_value( $tag, $fo->get_value );
     }
     return undef;
@@ -546,7 +555,7 @@ sub set_db_type_values {
                 for ( my $i = 0 ; $i <= $limit ; $i++ ) {
 
                     if ( ( $table eq $tab ) && ( $db_cols[$i] eq $col ) ) {
-                        $fo->{db_type}    = $db_type_names[$i];
+                        $fo->{db_type}    = uc $db_type_names[$i];
                         $fo->{db_null_ok} = $db_nulls[$i];
                         if ( $fo->{db_null_ok} == 0 ) {
                             undef $fo->{null_ok};
