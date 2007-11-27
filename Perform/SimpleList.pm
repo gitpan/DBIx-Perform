@@ -4,7 +4,7 @@ use base 'Exporter';
 use Data::Dumper;
 use DBI;
 
-our $VERSION = '0.693';
+our $VERSION = '0.694';
 
 our @EXPORT_OK = qw(	&new
   &is_empty
@@ -37,8 +37,8 @@ sub new {
     my $class = shift;
 
     bless my $self = {
-        limit => 2000,
-        limitinc => 2000,
+        limit => 1250,
+        limitinc => 1250,
         size => 0,
         iter => 0,
         rows => undef,
@@ -112,8 +112,8 @@ sub next_row {
 
     $self->{iter} = $self->{size}-1 if $self->{iter} >= $self->{size};
 
-    $self->{limit} = 2000 if $self->{limit} < 2000;
-    $self->{limitinc} = 2000 if $self->{limitinc} < 2000;
+    $self->{limit} = 1250 if $self->{limit} < 1250;
+    $self->{limitinc} = 1250 if $self->{limitinc} < 1250;
     if ($self->{iter} >= $self->{limit}) {
         $self->increase_limit;
     }
@@ -343,8 +343,8 @@ sub clear_list {
 
     $self->{rows} = ();
     $self->{sth}  = 0;
-    $self->{limit} = 2000;
-    $self->{limitinc} = 2000;
+    $self->{limit} = 1250;
+    $self->{limitinc} = 1250;
 }
 
 sub clone_list {

@@ -16,7 +16,9 @@ use DBIx::Perform::Instruct;
 use base 'Exporter';
 use Data::Dumper;
 
-our $VERSION = '0.693';
+our $VERSION = '0.694';
+
+use constant 'KEY_DEL' => '330';
 
 use vars qw(@EXPORT_OK $DB $STH $STHDONE $MASTER_STH $MASTER_STHDONE );
 
@@ -419,7 +421,8 @@ sub table_fields {
         while (my $fo = $fl->iterate_list) {
             my ($tag, $tbl, $col) = $fo->get_names;
             if ($tables{"$tbl"} || $tags{"$tag"}) {
-                $more = 1 if (!defined $tags{"$tag"});
+                $more = 1 if (!defined $tags{"$tag"}
+			      || !defined $tables{"$tbl"});
                 $tables{"$tbl"} = 1;
                 $tags{"$tag"} = 1;
                 my $lookup = $fo->{lookup_hash};
@@ -590,7 +593,7 @@ sub do_master {
     my @masters = @$m;
     $master = $masters[0];
     my @details = @$d;
-    $detail = $details[0];
+    $detail = $details[0] || '';
 
     if ( $ct eq $detail ) {       # switch to master from detail
         if ( my $tb = $GlobalUi->go_to_table($master) ) {
@@ -649,7 +652,7 @@ sub do_detail {
         $detail = $details[1];
     }
     else {
-        $master = $masters[0];
+        $master = $masters[0] || '';
         $detail = $details[0];
     }
 
@@ -1017,6 +1020,9 @@ sub OnFieldExit {
     my $dontswitch = 1;
 
     if ( $key eq "\c[" ) {
+	return if $GlobalUi->{newfocus};
+        $actkey = trigger_ctrl_blk( 'after', "edit$mode", $table );
+	return if $GlobalUi->{newfocus};
         my $wid = $form->getWidget('ModeButtons');
         my $mode =
           lc( ( $wid->getField('LABELS') )->[ $wid->getField('VALUE') ] );
@@ -1038,7 +1044,7 @@ sub OnFieldExit {
           unless $GlobalUi->{'newfocus'};
         return;
     }
-    elsif ( $key eq "\cC" )                      # Ctrl-C
+    elsif ( $key eq "\cC" || $key eq KEY_DEL )                      # Ctrl-C
     {
         bail_out();
     }
@@ -1190,6 +1196,7 @@ warn "TRACE: entering verify_joins for field $f, table $t\n" if $::TRACE;
     for (my $i = $#$fos; $i >= 0; $i--) {
         if ($$fos[$i]->{verify}) {
             my $dt = $$fos[$i]->{table_name};
+	    return 1 if $dt eq $t;
             my $dc = $$fos[$i]->{column_name};
             return verify_join($f, $dt, $dc);
         }
@@ -1975,6 +1982,10 @@ sub do_query {
 warn "values for 1st query:\n" . join ("\n", @vals) . "\n" if $::TRACE;
 #execute the queries
 
+    my $err = $GlobalUi->{error_messages};
+    $GlobalUi->display_status( $err->{'se09.'} );
+    Curses::refresh(curscr);
+
     my $errmsg;
     for (my $i = 0; $i < $#queries; $i++) {
         my $sth = $DB->prepare($queries[$i]);
@@ -1995,6 +2006,8 @@ warn "values for 1st query:\n" . join ("\n", @vals) . "\n" if $::TRACE;
 #            warn "ERROR:\n$DBI::errstr\noccurred after\n$queries[$i]\n";
             last;
         }
+        $GlobalUi->display_status( $err->{'se10.'} );
+        Curses::refresh(curscr);
     }
 
     my $form    = $GlobalUi->get_current_form;
@@ -2028,256 +2041,6 @@ warn "values for 1st query:\n" . join ("\n", @vals) . "\n" if $::TRACE;
     $GlobalUi->display_error($errmsg) if $errmsg;
 warn "leaving do_query\n" if $::TRACE;
 }
-
-=pod
-sub do_query_take5 {
-#sub do_query {
-    my ( $field, $widget, $subform ) = @_;
-    my $app           = $GlobalUi->{app_object};
-    my $current_table = $GlobalUi->get_current_table_name;
-    my $TMPTBL1       = "pf_tmp1";
-    my $TMPTBL2       = "pf_tmp2";
-
-    generate_query_aliases();
-    my $aliases = $app->{'aliases'};
-    my ( %qcols,  %tjoins,  %tags );
-    my ( %cjoins, %cjoins2, %cjoins3 );
-
-    my $fl = $GlobalUi->get_field_list;
-    $fl->reset;
-    while ( my $fo = $fl->iterate_list ) {
-
-#$fo->print;
-        next if ( defined $fo->{displayonly} );
-        my ( $tag, $tbl, $col ) = $fo->get_names;
-        my $tnc   = "$tbl.$col";
-        my $alias = $aliases->{$tnc};
-        my $val   = $GlobalUi->get_screen_value($tag);
-        my $v2    = defined $val ? $val : '';
-        $qcols{$tbl}->{$col} = $v2;
-
-        #lookups
-        if ( defined $fo->{active_tabcol} ) {
-            my $t2 = $fo->{join_table};
-            my $c2 = $fo->{join_column};
-            my ( $t1, $c1 ) = $fo->{active_tabcol} =~ /(\w+)\.(\w+)/;
-            my $a1 = $aliases->{"$t1.$c1"};
-            my $a2 = $aliases->{"$t2.$c2"};
-
-            if ($a1 ne $a2) {
-            $qcols{$t1}->{$c1} = '' unless defined $qcols{$t1}->{$c1};
-            $qcols{$t2}->{$c2} = '' unless defined $qcols{$t2}->{$c2};
-if ($::TRACE) {
-warn "lookup $tbl.$col, where $t1.$c1 = $t2.$c2\n";
-warn "Alias 0 = $alias\n";
-warn "Alias 1 = $a1\n";
-warn "Alias 2 = $a2\n";
-}
-            $tjoins{$t1}->{$t2}                       = 1;
-            $tjoins{$t2}->{$t1}                       = 1;
-
-            $cjoins2{$t1}->{"$TMPTBL1.$a1 = $t2.$c2"} = 1
-                 if ($t1 eq $current_table);
-            $cjoins2{$t2}->{"$TMPTBL1.$a2 = $t1.$c1"} = 1
-                 if ($t2 eq $current_table);
-
-            $cjoins3{$t1}->{"$TMPTBL2.$a2 = $t1.$c1"} = 1;
-            $cjoins3{$t2}->{"$TMPTBL2.$a1 = $t2.$c2"} = 1;
-            }
-        }
-
-        #joins
-        if ( defined $tags{$tag} ) {
-            my ( $t1, $c1 ) = $tags{$tag} =~ /(\w+)\.(\w+)/;
-            my $alias2 = $aliases->{ $tags{$tag} };
-warn "join $tnc = $t1.$c1\n" if $::TRACE;
-            if ($tnc ne $tags{$tag}) {
-                $tjoins{$t1}->{$tbl}                              = 1;
-                $tjoins{$tbl}->{$t1}                              = 1;
-
-                $cjoins2{$tbl}->{"$TMPTBL1.$alias = $tags{$tag}"} = 1;
-                $cjoins3{$t1}->{"$TMPTBL2.$alias = $tags{$tag}"}  = 1;
-
-                $cjoins2{$t1}->{"$TMPTBL1.$alias2 = $tnc"}        = 1;
-                $cjoins3{$tbl}->{"$TMPTBL2.$alias2 = $tnc"}       = 1;
-            }
-        }
-        else {
-            $tags{$tag} = "$tbl.$col";
-        }
-    }
-
-    # set up data for building of queries
-    my ( %selects,  %selects2,  %selects3 );
-    my ( %groupbys2, %groupbys3 );
-
-    my $groupbyflag = 0;
-
-    my $outerjoins = $tjoins{$current_table};
-    foreach my $t ( keys %$outerjoins ) {
-        my $ocs = $qcols{$t};
-        foreach my $oc ( keys %$ocs ) {
-            my $alias = $aliases->{"$t.$oc"};
-            $selects2{"min($t.$oc) $alias"}     = 1;
-            $groupbyflag                        = 1;
-            $selects3{"$TMPTBL2.$alias $alias"} = 1;
-            $groupbys3{"$TMPTBL2.$alias"}       = 1;
-        }
-    }
-    foreach my $c ( keys %{ $qcols{$current_table} } ) {
-        my $alias = $aliases->{"$current_table.$c"};
-        $selects{"$current_table.$c $alias"} = 1;
-        $selects2{"$TMPTBL1.$alias $alias"}  = 1;
-        $selects3{"$TMPTBL2.$alias $alias"}  = 1;
-        my $val = $qcols{$current_table}->{$c};
-        if ( length $val > 0 ) {
-            my ( $wexpr, $wv ) = query_condition( $current_table, $c, $val );
-            $cjoins{$current_table}->{$wexpr} = \@$wv;
-        }
-
-        $groupbys2{"$TMPTBL1.$alias"} = 1;
-        $groupbys3{"$TMPTBL2.$alias"} = 1;
-    }
-    foreach my $c ( keys %{ $cjoins2{$current_table} } ) {
-        my ($alias) = $c =~ /^\w+\.(\w+)/;
-        unless (defined $selects2{"$TMPTBL1.$alias $alias"}) {
-            delete $cjoins2{$current_table}->{$c};
-        }
-    }
-
-    {
-        my $tnc   = "$current_table.rowid";
-        my $alias = $aliases->{$tnc};
-        if ( defined $alias ) {
-            $selects{"$tnc $alias"}             = 1;
-            $selects2{"$TMPTBL1.$alias $alias"} = 1;
-            $selects3{"$TMPTBL2.$alias $alias"} = 1;
-            $groupbys2{"$TMPTBL1.$alias"}       = 1;
-            $groupbys3{"$TMPTBL2.$alias"}       = 1;
-        }
-    }
-
-    # build 1st query to get Informix specific "rowid"
-
-    #    my $wheres = join ",\n", keys %{$cjoins{$current_table}};
-    my $wheres = '';
-    my @wvals  = ();
-    foreach my $c ( keys %{ $cjoins{$current_table} } ) {
-        $wheres .= "\nand $c";
-        my $v = $cjoins{$current_table}->{$c};
-        push @wvals, @$v if ref $v;
-    }
-    $wheres =~ s/\A\nand //;
-
-    my $query =
-      "select\n" . join( ",\n", keys %selects ) . "\nfrom\n$current_table";
-    $query .= "\nwhere\n$wheres" if $wheres;
-
-    my %wheres3;
-    my $froms;
-    my ($query2, $query3);
-    my $query3flag = 0;
-    if ($groupbyflag) {
-        $query .= "\ninto temp $TMPTBL1";
-
-
-        # build 2nd query
-        my $joins = join ",\nouter ", keys %$outerjoins;
-        $froms = $TMPTBL1;
-        $froms .= ",\nouter $joins" if ($joins);
-        $wheres = join "\nand ", keys %{ $cjoins2{$current_table} };
-        $query2 = "select\n" . join( ",\n", keys %selects2 )
-                   . "\nfrom\n$froms";
-        $query2 .= "\nwhere\n$wheres" if $wheres;
-        $query2 .= "\ngroup by\n" . join( ",\n", keys %groupbys2 );
-
-
-        # build 3rd query
-        $froms = "";
-        foreach my $t1 ( keys %tjoins ) {
-            if ( $t1 ne $current_table && !defined $outerjoins->{$t1} ) {
-                $query3flag = 1;
-                $froms .= ",\nouter $t1";
-                foreach my $c ( keys %{ $qcols{$t1} } ) {
-                    my $alias = $aliases->{"$t1.$c"};
-                    $selects3{"min($t1.$c) $alias"} = 1;
-                }
-                foreach my $c ( keys %{ $cjoins3{$t1} } ) {
-                    $wheres3{$c} = 1;
-                }
-            }
-        }
-    }
-
-
-    #do the queries
-    warn "$query;\n" . join( " ", @wvals ) . "\n" if $::TRACE;
-    my $sth;
-
-    if ($query3flag || $groupbyflag) {
-        $sth = $DB->prepare($query);
-        if ($sth) {
-            $sth->execute(@wvals);
-        }
-        else {
-            warn "1: $DBI::errstr\n";
-        }
-    }
-
-    my $ralias = $aliases->{"$current_table.rowid"};
-    if ($query3flag) {
-        $query2 .= "\ninto temp $TMPTBL2";
-        $query3 =
-            "select\n"
-          . join( ",\n", keys %selects3 )
-          . "\nfrom\n$TMPTBL2$froms"
-          . "\nwhere\n"
-          . join( "\nand ", keys %wheres3 )
-          . "\ngroup by\n"
-          . join( ",\n", keys %groupbys3 )
-          . "\norder by $ralias";
-
-        warn "$query2;\n" if $::TRACE;
-        warn "$query3;\n" if $::TRACE;
-        my $sth = $DB->prepare($query2);
-        if ($sth) {
-            $sth->execute;
-        }
-        else {
-            warn "2: $DBI::errstr\n";
-        }
-
-        execute_query( $subform, $query3 );
-
-        $sth = $DB->prepare("drop table $TMPTBL2");
-        if ($sth) {
-            $sth->execute;
-        }
-        else {
-            warn "3: $DBI::errstr\n";
-        }
-    }
-    elsif ($groupbyflag) {
-        $query2 .= "\norder by $ralias";
-        warn "$query2;\n" if $::TRACE;
-        execute_query( $subform, $query2 );
-    }
-    else {
-        $query .= "\norder by $ralias";
-        execute_query( $subform, $query, \@wvals );
-    }
-
-    if ($query3flag || $groupbyflag) {
-        $sth = $DB->prepare("drop table $TMPTBL1");
-        if ($sth) {
-            $sth->execute;
-        }
-        else {
-            warn "4: $DBI::errstr\n";
-        }
-    }
-}
-=cut
 
 sub query_condition {
     my ( $tbl, $col, $val ) = @_;
@@ -2354,7 +2117,8 @@ sub execute_query {
     my $err           = $GlobalUi->{error_messages};
 
 warn "entering execute_query\n" if $::TRACE;
-    $GlobalUi->display_status( $err->{'se10.'} );
+    $GlobalUi->display_status( $err->{'se11.'} );
+    Curses::refresh(curscr);
 
     # update row list
     my $row = $RowList->stuff_list( $DB, $query_count, $query, $vals );
@@ -2380,256 +2144,6 @@ warn "entering execute_query\n" if $::TRACE;
     warn "TRACE: leaving execute_query\n" if $::TRACE;
     return  $size;
 }
-
-=pod
-sub do_query_take2 {
-#sub do_query {
-    my ( $field, $widget, $subform ) = @_;
-
-    warn "TRACE: entering do_query\n" if $::TRACE;
-
-    my $err = $GlobalUi->{error_messages};
-    my $app = $GlobalUi->{app_object};
-
-    #my $masters = $app->getField('MASTERS');
-    my $masters = undef;    # not hookup up yet
-    my @tables =
-      @{ $GlobalUi->{attribute_table_names} };    # attribute section names
-    my $fl = $GlobalUi->get_field_list;
-
-    my ( $table, $detail, $msg );
-    my %tags;
-
-    #clear_textfields;
-
-    #$fl->print_list;
-    #exit;
-
-    # Handle queries for Master/Detail
-    if ($masters)                                 # TBD
-    {
-        my $mdpair    = $$masters[0];
-        my $indexes   = $app->getField('form_name_indexes');
-        my $formindex = $$indexes{ $app->getField('form_name') };
-        my $mdmode    = $app->getField('md_mode');
-        my $mdindex   = $mdmode eq 'm' ? 0 : $mdmode eq 'd' ? 1 : undef;
-        die "Masters exist in instructions but md_mode is '$mdmode'"
-          unless defined($mdindex);
-        $table  = $$mdpair[$mdindex];
-        $detail = $mdindex != 0;
-    }
-
-    # Process field objects from "field_list"
-    my $current_table = $GlobalUi->get_current_table_name;
-    my %wheres        = ();
-    my @vals          = ();
-    my %tbls          = ();
-
-    $fl->reset;
-    while ( my $fo = $fl->iterate_list ) {
-        my ( $tag, $tbl, $col ) = $fo->get_names;
-
-        #$fo->print;
-        next unless $tbl;
-        next if ( defined $fo->{displayonly} );
-        next if $masters && $tbl ne $table;    # just a guess ...
-
-        #lookups
-        if ( defined $fo->{active_tabcol} ) {
-            my $t2 = $fo->{join_table};
-            my $c2 = $fo->{join_column};
-            $wheres{"$fo->{active_tabcol} = $t2.$c2"} = ();
-            $tbls{$t2} = 1;
-            next;
-        }
-
-        #composite joins
-        #  see note in DigestPer.pm
-
-        $tbls{$tbl} = 1;
-        if ( !$masters ) {    # handle joins
-            my $t2 = $fo->{join_table};
-            my $c2 = $fo->{join_column};
-            if ( defined($t2) && defined($c2) ) {
-
-                #warn "in join:";
-                #$fo->print;
-                #exit;
-                $wheres{"$tbl.$col = $t2.$c2"} = ();
-                $tbls{$t2} = 1;
-            }
-        }
-
-        #do joins.  Since there can be more than one field object with
-        #  the same tag, this code detects duplicates with a hash.
-        #  When a duplicate is found, the related column.table is joined.
-        if ( defined $tags{$tag} ) {
-            $wheres{"$tags{$tag} = $tbl.$col"} = ();
-        }
-        else {
-            $tags{$tag} = "$tbl.$col";
-        }
-        #        my $val = $fo->get_value;
-        # val=fo->get_value is incorrect.  We want what the user entered, not
-        # the default values.
-        #my $form2 = $app->getForm('Run0');
-        #my $subform2 = $form2->getSubform('DBForm');
-        #        my $val = $subform2->getWidget($tag)->getField('VALUE');
-        #warn "calling get_screen_val";
-        my $val = $GlobalUi->get_screen_value($tag);
-        warn "tag = :$tag: tbl = :$tbl: col = :$col:\n" if $::TRACE_DATA;
-
-        #next unless (defined($val) && $val ne '');
-        next if ! defined $val || $val eq '';
-
-        # Is this right?  Always want to compare to the current table?
-        # Scenario: have 3 tables x, y, and z, and the current table is x.
-        # We could want to filter on some condition "where y.c = z.c",
-        # in which case the line below should not be present.
-        next unless $tbl eq $current_table;
-
-        # Determine what kind of comparison should be done
-
-        my $op    = '=';
-        my $cval  = $val;
-        my @cvals = ();
-
-        # SQL wildcard characters
-        if ( $val =~ /[*%?]$/ ) { $cval =~ tr/*?/%_/; $op = 'like'; }
-
-        if ( $val eq '=' ) { $op = 'is null'; $cval = undef; }
-        elsif ( $val =~ /^(<<|>>)(.*?)$/ ) {
-
-          #FIX looks like this can be done by doing a query here, then adding
-          # the results to the where clause.  Ex, if asking for '>>' from
-          # table and column 't.c', then the query here is:
-          # select max(t.c) from t
-          # If the result of that query is '41', then we add this to the wheres:
-          # t.c = 41
-            $msg = $err->{'th26d'};
-            $msg = $msg . ": $1";
-            $GlobalUi->display_status($msg);
-        }
-        elsif ( $val =~ /^([<>][<=>]?)(.*?)$/ ) {
-            $op   = $1;
-            $cval = $2;
-        }
-        elsif ( $val =~ /^(.+?):(.+)$/ ) {
-            $op = "between ? and ";
-            push( @cvals, $1 );
-            $cval = $2;
-        }
-        elsif ( $val =~ /^(.+?)\|(.+)$/ ) {    # might should use in ($1,$2)
-            $op = "= ? or $col = ";
-            push( @cvals, $1 );
-            $cval = $2;
-        }
-        my $where = "$tbl.$col $op" . ( defined($cval) ? ' ?' : '' );
-        push( @cvals, $cval ) if defined($cval);
-        $wheres{$where} = \@cvals if length $where > 0;
-    }
-
-    my $wheres = join " and\n", keys %wheres;
-    foreach my $wherev ( values %wheres ) {
-        push @vals, @$wherev if defined $wherev;
-    }
-
-    #don't want outer join with table that doesn't share a condition
-    #with the current table.
-    my $query2flag = 0;
-    my %outers;
-    foreach $table ( keys %tbls ) {
-        next if $table eq $current_table;
-        foreach my $w ( keys %wheres ) {
-            $outers{$table} = 1 if $w =~ /$table/ && $w =~ /$current_table/;
-            if ($w =~ /$table/ && $w =~ /$current_table/) {
-#                $outers{$table} = 1; 
-#            } else {
-## If we reach this spot, then the query as constructed will be too slow to
-## be practical.  
-#                $query2flag = 1;
-#            }
-        }
-    }
-
-    generate_query_aliases();
-    my $aliases = $app->{'aliases'};
-
-    my $tables = $current_table;
-    my ( @acols, $columns, $query );
-    my @groupbys;
-    my $groupby_flag = 0;
-    foreach $table ( keys %tbls ) {
-
-        #warn "table = :$table:\n" if $::TRACE;
-        my $groupby_this_table_flag = 0;
-        if ( $table ne $current_table ) {
-
-            #FIX -- Using "outer" in the list of tables is Informix specific
-            $tables .= $outers{$table} ? ", outer $table" : ", $table";
-            $groupby_this_table_flag = 1;
-            $groupby_flag            = 1;
-        }
-        my @cols = $fl->get_columns($table);
-        if ( @cols > 0 ) {
-            my %hcols = ();
-            for ( my $i = $#cols ; $i >= 0 ; $i-- ) {
-                $hcols{ $cols[$i] } = 1;
-            }
-            if ($groupby_this_table_flag) {
-                foreach my $col ( keys %hcols ) {
-                    $col = "$table.$col";
-                    next unless defined $aliases->{$col};
-                    $col = "min($col) $aliases->{$col}";
-                    push @acols, $col;
-                }
-            }
-            else {
-                foreach my $col ( keys %hcols ) {
-                    $col = "$table.$col";
-                    next unless defined $aliases->{$col};
-                    push @groupbys, $col;
-                    $col .= " $aliases->{$col}";
-                    push @acols, $col;
-                }
-            }
-        }
-    }
-    $columns = join( ",\n", @acols );
-    $query =
-      "select\n$columns\nfrom\n$tables" . ( $wheres ? "\nwhere\n$wheres" : '' );
-    $query .= "\ngroup by\n" . join( ",\n", @groupbys ) if $groupby_flag;
-
-    warn "wheres: $wheres\ntables: $tables\nquery:\n$query\n" if $::TRACE;
-    warn "vals: " . join( ' : ', @vals ) . "\n" if $::TRACE;
-
-    $GlobalUi->display_status( $err->{'se10.'} );
-
-    # update row list
-    my $row = $RowList->stuff_list( $query, \@vals, $DB, $app );
-    my $size = $RowList->list_size;
-
-    # Print outcome of query to status bar
-    if    ( $size == 0 ) { $GlobalUi->display_status( $err->{'no11d'} ); }
-    elsif ( $size == 1 ) { $GlobalUi->display_status( $err->{'1 8d'} ); }
-    else {
-        $msg = "$size " . $err->{'ro7d'};
-        $GlobalUi->display_status($msg);
-    }
-
-    #execute any instructions triggered after a query
-    trigger_ctrl_blk( 'after', 'query', $current_table );
-
-    # display the first table
-    display_row( $subform, $row );
-
-    # change focus to the user interface
-    $GlobalUi->change_mode_display( $subform, 'perform' );
-
-    warn "TRACE: leaving do_query\n" if $::TRACE;
-}
-
-=cut
 
 sub next_alias {
     my $i = shift;
@@ -2663,8 +2177,12 @@ sub generate_query_aliases {
         next if $fo->{displayonly};
         ($alias, $i) = next_alias($i);
         my ( $tag, $tbl, $col ) = $fo->get_names;
-        $aliases{"$tbl.$col $tag"} = $alias;
+	if (defined $fo->{subscript_floor} && defined $aliases{"$tbl.$col"}) {
+	    $i--;
+	    $alias = $aliases{"$tbl.$col"};
+	}
         $aliases{"$tbl.$col"} = $alias;
+        $aliases{"$tbl.$col $tag"} = $alias;
         if (defined $fo->{join_table}) {
             $tbl = $fo->{join_table};
             $col = $fo->{join_column};
@@ -2684,6 +2202,30 @@ sub generate_query_aliases {
     }
 #warn Data::Dumper->Dump([%aliases], ['aliases']);
     $app->{aliases} = \%aliases;
+}
+
+sub do_subscript {
+    my ($fo, $str) = @_;
+    my $min = $fo->{subscript_floor}-1;
+    my $max = $fo->{subscript_ceiling}-1;
+    my $tag = $fo->get_field_tag;
+    my $v = $GlobalUi->get_screen_value($tag);
+    my @chars = split //, $str;
+    my @vcs   = split //, $v;
+    my $max2 = $min + length $v;
+    $max = $max2 if $max > $max2;
+    my $i = $max;
+    if ($v ne '') {
+        for (; $i >= $min; $i--) {
+            $chars[$i] = $vcs[$i-$min];
+        }
+        for (; $i >= 0; $i--) {
+	    $chars[$i] = ' ' if !defined $chars[$i] || $chars[$i] eq '';
+        }
+    }
+    $str = join ('', @chars);
+#warn ":$v: is $min to $max of str =\n$str\n";
+    return $str;
 }
 
 sub do_add {
@@ -2723,31 +2265,23 @@ sub do_add {
 
  	# special handling for subscript attribute
         if (   defined $fo->{subscript_floor}) {
-            my $min = $fo->{subscript_floor};
-            my $max = $fo->{subscript_ceiling};
             my $str = $vals{$col} || '';
-            my @chars = split //, $str;
-            my @vcs   = split //, $v;
-            for (my $i = $max; $i >= $min; $i--) {
-                $chars[$i] = $vcs[$i-$min] || ' ';
-            }
-            $str = join ('', @chars);
-            $vals{$col} = $str;
+	    $vals{$col} = do_subscript($fo, $str);
             next;
-            
         }
 	else {
 	    $rc = $fo->format_value_for_database( 'add', undef );
+	    my $v2 = $fo->get_value;
 	}
 	return $rc if $rc != 0;
 
         # add col and val for the sql add
 
-        $ca{$col} = $v;
+        $ca{$col} = $v if $v ne '';
     }
 
     foreach my $col (keys %vals) {
-        $ca{$col} = $vals{$col};
+        $ca{$col} = $vals{$col} if $vals{$col} ne '';
     }
 
     # insert to db
@@ -2834,6 +2368,7 @@ sub do_update {
 
     $GlobalUi->change_mode_display( $form, 'update' );
     $GlobalUi->update_subform($subform);
+    $GlobalUi->change_mode_display( $subform, 'update' );
 
     my %vals;
     my %sstags;
@@ -2849,31 +2384,23 @@ sub do_update {
         my $alias = $aliases->{$tnc};
 #        next unless defined $cur_row->{$alias};
         my $idx   = $RowList->{aliases}->{$alias};
+#warn "do_upd: $tnc -> $alias -> $idx\n" if $::TRACE;
         my $fv = $cur_row->[$idx];
-        next unless defined $fv;
+#        next unless defined $fv;
+        $fv = '' unless defined $fv;
+#warn "do_upd: field val = $fv\n" if $::TRACE;
 
         # get value from field
         my $v  = $fo->get_value;
         my $rc = 0;
-
-        $GlobalUi->change_mode_display( $subform, 'update' );
 
 #        my $rc = $fo->validate_input( $v, 'update' );
 #        return if $rc != 0;
 
 #        # special handling for subscript attribute
         if (   defined $fo->{subscript_floor}) {
-            my $min = $fo->{subscript_floor}-1;
-            my $max = $fo->{subscript_ceiling}-1;
             my $str = $vals{$tnc} || '';
-            my @chars = split //, $str;
-            my @vcs   = split //, $v;
-            for (my $i = $max; $i >= $min; $i--) {
-                $chars[$i] = $vcs[$i-$min] || ' ';
-            }
-            $str = join ('', @chars);
-#warn "$min to $max, total str =\n$str\n";
-            $vals{$tnc} = $str;
+	    $vals{$tnc} = do_subscript($fo, $str);
             push @{$sstags{$tnc}}, $tag;
             next;
         }
@@ -2904,7 +2431,7 @@ sub do_update {
         my $fv = $cur_row->[$idx];
         my $v = $vals{$tnc};
 #warn "$tnc = :$v:$fv\n";
-        if ( $v ne $fv ) {
+        if (defined $v && defined $fv && $v ne $fv ) {
             $upds{$col}           = $v;
             $aliased_upds{$alias} = $v;
             foreach my $tag (@{$sstags{$tnc}}) {
@@ -2921,9 +2448,17 @@ sub do_update {
         $GlobalUi->change_mode_display( $form, 'update' );
         return;
     }
-    my @updvals = map { $upds{$_} } @updcols;
+    my @updvals;
+    for (my $i = 0; $i <= $#updcols; $i++) {
+	if ($upds{$updcols[$i]} eq '') {
+	    $updcols[$i] .= ' = NULL';
+        } else {
+	    push @updvals, $upds{$updcols[$i]};
+	    $updcols[$i] .= ' = ?';
+	}
+    }
+    my $sets = join( ', ', @updcols);
     warn "updcols: [@updcols]" if $::TRACE_DATA;
-    my $sets = join( ', ', map { "$_ = ?" } @updcols );
 
     my $ralias = $aliases->{"$table.rowid"};
 #    my @wherevals = ( $cur_row->{$ralias} );
@@ -3026,6 +2561,7 @@ sub display_row {
         my $val;
         $val = $row->[$idx] if defined $idx;
         if ( !defined $field_hash{$tag} || defined $val ) {
+	    $val = '' if !defined $val;
             $field_hash{$tag} = $val;
 
             my $pos = 0;
@@ -3033,6 +2569,12 @@ sub display_row {
 #my $warnstr = "display: $tag $table.$col";
 #$warnstr .= " $alias" if defined $alias;
 #$warnstr .= " $alias2\n" if defined $alias2;
+#my $tmp = $fo->{type} || '';
+#$warnstr .= "$tmp";
+#$tmp = $fo->{db_type} || '';
+#$warnstr .= " $tmp";
+#$tmp = $fo->{display_only_type} || '';
+#$warnstr .= " $tmp\n";
 #$warnstr .= "$val:\n" if defined $val;
 #warn $warnstr;
             ( $val, $rc ) = $fo->format_value_for_display( $val );

@@ -11,7 +11,7 @@ use Parse::RecDescent;
 use Data::Dumper;
 use base 'Exporter';
 
-our $VERSION = '0.693';
+our $VERSION = '0.694';
 
 # debug: set (unset) in runtime env
 $::TRACE      = $ENV{TRACE};
@@ -179,7 +179,7 @@ sub parse_line {
         $self->{column_name} = $val if defined $val;
 
         $val = lc $href->{data_type};
-        $self->{type} = $val if defined $val;
+        $self->{type} = $val if $val;
 
         $val = $href->{value};
         $self->{value} = $val if defined $val;
@@ -779,6 +779,9 @@ sub set_field_type {
     $self->{type} = $self->{disp_only_type}
       if defined $self->{disp_only_type};
 
+#my $dtype = $self->{disp_only_type} || '';
+#warn "set_field_type: $type $dtype\n";
+
     return undef;
 }
 
@@ -788,21 +791,22 @@ sub format_value_for_display {
     my $self = shift;
     my $val  = shift;
 
-    return ( $val, 0 ) if !defined $val || !defined $self->{db_type};
-#warn "format_val_for_display :$val:\n";
+    my $dtype = $self->{db_type} || $self->{type};
+    return ( $val, 0 ) if !defined $val || !defined $dtype;
+#warn "format_val_for_display as $dtype :$val:\n";
 
 #    $val = $self->get_value if $val =~ /^\*+$/;
     my $rc = 0;
 
     # default: format numbers to db type
     # FORMAT - FLOAT REAL DECIMAL db_types
-    if (   $self->{db_type} eq 'DECIMAL'
-        || $self->{db_type} eq 'DEC'
-        || $self->{db_type} eq 'FLOAT'
-        || $self->{db_type} eq 'SMALLFLOAT'
-        || $self->{db_type} eq 'REAL' )
+    if (   $dtype eq 'DECIMAL'
+        || $dtype eq 'DEC'
+        || $dtype eq 'FLOAT'
+        || $dtype eq 'SMALLFLOAT'
+        || $dtype eq 'REAL' )
     {
-        $val .= '.0' if $val !~ /\./;
+        $val .= '.0' if $val !~ /\./ && $val ne '';
     }
 
     ( $val, $rc ) = $self->handle_subscript_attribute( $val )
@@ -810,7 +814,7 @@ sub format_value_for_display {
 
     # needs much more testing
     ( $val, $rc ) = $self->handle_money_attribute( $val )
-      if defined $self->{money} && $rc == 0;
+      if $dtype eq 'MONEY' && $rc == 0;
 
     ( $val, $rc ) = $self->do_picture($val);
 
@@ -924,25 +928,20 @@ sub handle_subscript_attribute {
     my $self         = shift;
     my $screen_value = shift;    # complete string
 
-#    return ( $screen_value, 0 )
-#      if !defined $self->{subscript_floor}
-#      || !defined $self->{subscript_ceiling};
     return ( $screen_value, 0 )
       if $self->{type} eq 'SERIAL';
 
-#    my $tag      = $self->get_field_tag;
-
-    my $val   = $screen_value;
     my $vsize = 0;
-    $vsize = length $val if defined $val;
+    $vsize = length $screen_value if defined $screen_value;
 
     my $min  = $self->{subscript_floor};
     my $max  = $self->{subscript_ceiling};
     my $size = $max - $min + 1;
 
-    if ( $vsize >= $max ) {
-        $val = substr( $val, $min - 1, $size ) if defined $val;
-    }
+    my $val   = $screen_value;
+    $val = substr( $screen_value, $min - 1, $size )
+	if defined $screen_value && ( $vsize >= $min );
+#warn "subscript\na:$screen_value:\nb:$val\nc:$self->{value}\n";
     $self->{value} = $val;    # needs to be set directly
 
     return ( $val, 0 );
@@ -1218,9 +1217,7 @@ sub handle_money_attribute {
 
 #warn "handle_money_attr: $screen_value\n";
 
-    if ( $self->{db_type} eq 'MONEY' ) {
-        $screen_value = '$' . $screen_value;
-    }
+    $screen_value = '$' . $screen_value;
     return ( $screen_value, 0 );
 }
 
@@ -1292,6 +1289,15 @@ sub validate_input {
                     return -1;
                 }
             }
+        }
+    }
+
+    if ($self->is_any_numeric_db_type) {
+	if ($value =~ /[^\s0-9.+-]/) {
+            warn "TRACE: leaving validate_input on fail, must be number\n" if $::TRACE;
+            $GlobalUi->display_error('er11d');
+            $GlobalUi->change_focus_to_field_in_current_table($tag);
+            return -1;
         }
     }
 

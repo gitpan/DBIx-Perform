@@ -9,9 +9,10 @@
 
 use strict;
 
-our $VERSION = '0.691';
+our $VERSION = '0.694';
 
 our $GlobalUi = $DBIx::Perform::GlobalUi;
+our $DB = $DBIx::Perform::DB;
 
 # trigger on column, table.column, and maybe table of the given field object
 sub trigger_ctrl_blk_fld
@@ -21,9 +22,13 @@ sub trigger_ctrl_blk_fld
     my $fo	= shift;
     my ( $field_tag, $table, $column_name) = $fo->get_names;
 
-warn "TRACE: entering trigger_ctrl_blk_fld $when $table.$column_name\n" if $::TRACE;
-
     my $app = $GlobalUi->{app_object};
+if ($::TRACE) {
+my $tbl = '';
+$tbl = " $table" if $app->{fresh};
+warn "TRACE: entering trigger_ctrl_blk_fld $when $table.$column_name$tbl\n";
+}
+
     my @ofs = ($column_name, "$table.$column_name");
     push @ofs, $table if $app->{'fresh'};
     $app->{'fresh'} = 0;
@@ -65,6 +70,28 @@ warn "$when $event of " . join(', ', @ofs) . "\n" if $::TRACE_DATA;
     return act(@actions);
 }
 
+
+sub goto_nextfield {
+    my $field_tag = shift;
+
+    my $app = $GlobalUi->{app_object};
+    my $form = $GlobalUi->get_current_form;
+    my $old_tag = $GlobalUi->{'focus'};
+    if ($old_tag ne $field_tag) {
+        my $subform = $form->getSubform('DBForm');
+        my $widget = $subform->getWidget($old_tag);
+        $widget->{CONF}->{'EXIT'} = 1;
+        my $scrns = get_screen_from_tag($field_tag);
+        my $scrn = $$scrns[0];
+        goto_screen("Run$scrn");
+        $form = $app->getForm("Run$scrn");
+        $subform = $form->getSubform('DBForm');
+	$subform->setField('FOCUSED', $field_tag);
+    }
+    $GlobalUi->{'newfocus'} = $field_tag
+        unless $GlobalUi->{'newfocus'};
+}
+
 # The actions are stored in an array.
 #   Intent is to handle nested if-then-else actions
 #   by calling this function recursively
@@ -85,21 +112,7 @@ warn "action :$ac:$ft_print:$pe_print:\n";
 }
 	if ($ac eq 'nextfield'){
             return "\c[" if (lc($field_tag) eq 'exitnow');
-            my $form = $GlobalUi->get_current_form;
-            my $old_tag = $GlobalUi->{'focus'};
-            if ($old_tag ne $field_tag) {
-                my $subform = $form->getSubform('DBForm');
-                my $widget = $subform->getWidget($old_tag);
-                $widget->{CONF}->{'EXIT'} = 1;
-                my $scrns = get_screen_from_tag($field_tag);
-                my $scrn = $$scrns[0];
-                goto_screen("Run$scrn");
-                $form = $app->getForm("Run$scrn");
-                $subform = $form->getSubform('DBForm');
-	        $subform->setField('FOCUSED', $field_tag);
-            }
-            $GlobalUi->{'newfocus'} = $field_tag
-                unless $GlobalUi->{'newfocus'};
+	    goto_nextfield($field_tag);
 	}
 	elsif ($ac eq 'abort') {
             return "\cC";
@@ -116,7 +129,8 @@ warn "action :$ac:$ft_print:$pe_print:\n";
             my $val = do_the_math($perfexpr);
             my $fo = DBIx::Perform::get_field_object_from_tag($field_tag);
             $fo->set_value($val);
-            $GlobalUi->set_screen_value($field_tag, $val);
+	    my ($rval, $rc) = $fo->format_value_for_display($val);
+            $GlobalUi->set_screen_value($field_tag, $rval);
 	    DBIx::Perform::trigger_lookup($field_tag);
 	}
         elsif ($ac eq 'if') {
@@ -312,6 +326,10 @@ warn "call_extern_C_func: found $extern_exe\n" if $::TRACE;
 
         my @cline = ($extern_exe, $socknm);
         if (!fork) {
+#	    my $child_db = $DB->clone();
+	    $DB->{InactiveDestroy} = 1;
+#	    $DB->disconnect;
+            undef $DB;
             exec(@cline);
             die "ERROR: exec failed! err = $!\n";
         }
@@ -379,6 +397,7 @@ warn "exiting external program\n" if $::TRACE;
 # char of each line:
 # [A-Za-z]      field-tag  value
 # &             name of function to call
+# @             name of database
 # <             parameter for function (can be 0, 1, more than 1)
 # >             return value
 # This means, can't have any CR/LF characters in the values or parameters
@@ -392,6 +411,7 @@ sub extern_data_out
     my $fl = $GlobalUi->get_field_list;
     my $app = $GlobalUi->{app_object};
 
+    push @data_o, "\@$ENV{DB_NAME}";
     push @data_o, "\&$funcname";
     push @data_o, ">" if $is_retval;
     my $i;
@@ -438,11 +458,17 @@ warn "extern_data_in: :$data_i[$i]:\n" if $::TRACE;
             my $field_tag = $1;
             my $val = $2;
 warn ":$field_tag: = :$val:\n" if $::TRACE_DATA;
-            my $fo = DBIx::Perform::get_field_object_from_tag($field_tag);
-            $fo->set_value($val);
-            my ($pos, $rc);
-            ($val, $rc) = $fo->format_value_for_display($val);
-            $GlobalUi->set_screen_value($field_tag, $val);
+            if ($field_tag eq 'nextfield') {
+		goto_nextfield($val);
+	    } else {
+                my $fo = DBIx::Perform::get_field_object_from_tag($field_tag);
+	        if (defined $fo) {
+                    $fo->set_value($val);
+                    my ($pos, $rc);
+                    ($val, $rc) = $fo->format_value_for_display($val);
+                    $GlobalUi->set_screen_value($field_tag, $val);
+		}
+	    }
         }
     }
     $GlobalUi->redraw_subform;

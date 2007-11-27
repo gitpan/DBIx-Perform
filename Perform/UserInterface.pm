@@ -14,7 +14,9 @@ use DBIx::Perform::FieldList;
 use base 'Exporter';
 use Data::Dumper;
 
-our $VERSION = '0.693';    # valtech
+our $VERSION = '0.694';    # valtech
+
+use constant 'KEY_DEL' => '330';
 
 # $UserInterface methods
 our @EXPORT_OK = qw(
@@ -162,14 +164,16 @@ our %Runtime_error_messages = (
     'da21p'    => 'Database Error In LOOKUP',
     'ne53k '   => 'Neither field, number nor quoted string in control block',
     'da11r'    => 'Database error',
+    'se09.'    => 'Searching..',
     'se10.'    => 'Searching...',
+    'se11.'    => 'Searching....',
     'no11d'    => 'no rows found',
-    '1 8d'     => '1 row(s) found',
-    'ro7d'     => 'row(s) found',
+    '1 8d'     => '1 row found',
+    'ro7d'     => 'rows found',
     'ro6d'     => 'Row added',
     'ro8d'     => 'Row deleted',
     'no14d'    => 'No fields changed',
-    'ro10d'    => 'rows affected',
+    'ro10d'    => 'row affected',
     'ro6d'     => 'Row added',
     'sq15e'    => 'SQL insert failure',
     'ad21e'    => 'add: SQL prepare failure',
@@ -209,7 +213,6 @@ The PERFORM Menu presents you with the following options:\r
  > Output           Sends a form or report to an output destination\r
  > Exit             Returns to the Perform Menu\r
 
-#FIX:  this may not be a good place for this documentation
 \r
 PROCEDURE:\r
 \r
@@ -224,7 +227,6 @@ all the rows that satisfy your query).  If there is more than one row in the\r
 Current List, you can select the Next option to look at the next row.  After\r
 you use Next, you can use the Previous option to look at the previous row.\r
 \r
-FIX: this is not supported is it?
 On OnLine systems, use the View option to display the contents of TEXT and\r
 BYTE fields using the external programs specified in the PROGRAM attributes\r
 or a default system editor for TEXT fields. BYTE fields cannot be displayed\r
@@ -726,7 +728,7 @@ sub capture_file_data    # previously cursese_formdefs
 
             # keys
             $w->{'FOCUSSWITCH'} = "\t\n\cp\cw\cc\ck\c[\cf\cb";
-            $w->{'FOCUSSWITCH_MACROKEYS'} = [ KEY_UP, KEY_DOWN ];
+            $w->{'FOCUSSWITCH_MACROKEYS'} = [ KEY_UP, KEY_DOWN, KEY_DEL ];
 
             my $color = $f->{color} || $deffldbg;
             $w->{'BACKGROUND'} = $color;
@@ -756,6 +758,8 @@ sub capture_file_data    # previously cursese_formdefs
     return \@formdefs;
 }
 
+# display_help_screen _should_ use STDOUT, not STDERR, but STDOUT didn't
+#   work well.
 sub display_help_screen {
     my $self    = shift;
     my $textkey = shift;
@@ -765,21 +769,24 @@ sub display_help_screen {
     my $y = $maxy - 2;
     my $key;
 
+    Curses::endwin;
+    Curses::raw;
+    print STDERR "\n" x ($maxy+$maxy);
+    $text .= "\n" x $y;
     do {
+        print STDERR "\n\n";
         $text =~ s/(([^\n]*\n){$y})//;
         my $scr_of_text = $1;
-        if ($scr_of_text) {
+        if ($text =~ /[^\n]/) {
             $scr_of_text .=
               "\nPress SPACE for more or any other key to leave help";
         }
         else {
-            $scr_of_text = $text;
-            $text        = '';
-            $scr_of_text .= "\e[$maxy;1HPress a key to leave help";
+            $scr_of_text .= "Press a key to leave help";
         }
-        print "\e[1;1H\e[J$scr_of_text";
-        $key = getc;
-    } while ( $text && $key eq " " );
+        print STDERR "$scr_of_text";
+        $key = getc(STDIN);
+    } while ( $text =~ /[^\n]/ && $key eq " " );
 
     #make Curses redraw the screen
     Curses::refresh(curscr);

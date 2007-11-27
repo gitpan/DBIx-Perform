@@ -71,7 +71,7 @@ use vars qw(@EXPORT_OK $VERSION %HEADING_WORDS);
 
 BEGIN {
     @EXPORT_OK = qw(digest digest_file convert_per_to_xml convert_per_to_yml );
-    $VERSION   = '0.693';
+    $VERSION   = '0.694';
 
     %HEADING_WORDS =
       map { ( $_, 1 ) } qw(screen tables attributes instructions end);
@@ -97,7 +97,7 @@ descriptor.
 
 =cut
 
-our $VER_DATE = '2007-09-07';
+our $VER_DATE = '2007-10-17';
 
 our $TABLES;
 our $FieldList;
@@ -348,11 +348,13 @@ sub table_post_processing {
 
                 my $query   = "SELECT * FROM $table";
                 my $sth     = $database->prepare($query);
-                my @db_cols = @{ $sth->{NAME} };             # Column names
-                my @res     = grep( /$column/, @db_cols );
-                if ( defined(@res) ) {
-                    $field->{table_name} = $table;
-                    last;
+		if ($sth) {
+                    my @db_cols = @{ $sth->{NAME} };             # Column names
+                    my @res     = grep( /$column/, @db_cols );
+                    if ( defined(@res) ) {
+                        $field->{table_name} = $table;
+                        last;
+		    }
                 }
             }
         }
@@ -513,7 +515,7 @@ sub lookup_attributes_post {
                 }
                 $new_field->{join_table}  = $join_table;
                 $new_field->{join_column} = $join_column;
-                $new_field->{verify}      = $verify;
+                $new_field->{verify}      = $verify if $verify;
 
                 # lookups only "display" field values
                 # and only on a match between them

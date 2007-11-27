@@ -40,6 +40,7 @@ struct pf_field {
 struct pf_PerformData {
   struct sockaddr_un  S;
   int   sh;
+  char  dbname[pf_MAXNAME+1];
   char  funcname[pf_MAXNAME+1];
   char  funcparm[pf_MAXPARM][pf_MAXSTR+1];
   struct pf_field  field[pf_MAXHASH];

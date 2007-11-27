@@ -10,7 +10,7 @@ use constant 'KEY_DEL' => '330';    # dunno why not in Curses.
 
 use 5.6.0;
 
-our $VERSION = '0.691';
+our $VERSION = '0.694';
 
 Curses::define_key( "\c[[Z", KEY_STAB );    # for some reason not recognized.
 
@@ -152,10 +152,11 @@ sub input_key {
     }
     elsif ( $in eq KEY_RIGHT ) {
         do {
-            if ( ++$pos >= length($value) ) {
+            if ( $pos >= length($value) || $pos >= $max-1) {
                 $pos = 0;
                 $$conf{'EXIT'} = 1;
             }
+	    $pos++;
         } while ($fo->is_picture_char($pos));
     }
     elsif ( $in eq KEY_LEFT or $in eq KEY_BACKSPACE or $in eq "\cH" ) {
@@ -323,7 +324,6 @@ sub execute {
     return $key;
 }
 
-# Modify this to handle the pos-after-at-last-char case.
 sub _content {
     my $self   = shift;
     my $dwh    = shift;
@@ -339,8 +339,8 @@ sub _content {
     $value = substr( $value, 0, $$conf{MAXLENGTH} ) if $$conf{MAXLENGTH};
 
     # Adjust the cursor position and text start if it's out of whack
-    if ( $pos > length($value) ) {
-        $pos = length($value);
+    if ( $pos > length($value)+1 ) {
+        $pos = length($value)+1;
     }
     elsif ( $pos < 0 ) {
         $pos = 0;
@@ -356,7 +356,7 @@ sub _content {
     # Write the widget value (adjusting for horizontal scrolling)
     $seg = substr( $value, $ts, $$conf{COLUMNS} );
     $seg = '*' x length($seg) if $$conf{PASSWORD};
-    $seg .= ' ' x ( $$conf{COLUMNS} - length($seg) );
+#    $seg .= ' ' x ( $$conf{COLUMNS} - length($seg) );
     $dwh->addstr( 0, 0, $seg );
     $dwh->attroff(A_BOLD);
 
@@ -373,7 +373,7 @@ sub _cursor {
     # Display the cursor
     my $cpos = $$conf{CURSORPOS} - $$conf{TEXTSTART};
     my $attr = A_STANDOUT;
-    if ( $cpos >= $$conf{COLUMNS} ) {
+    if ( $cpos > $$conf{COLUMNS} ) {
         $cpos--;
         $attr = A_REVERSE;
     }

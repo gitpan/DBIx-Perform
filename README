@@ -75,14 +75,14 @@ it under the same terms as Perl itself.
 =======================================================================
 =======================================================================
 =======================================================================
-DBIx::Perform, version 0.692, 2007 Aug 1.
+DBIx::Perform, version 0.694, 2007 Oct 5.
 
 Many, many changes and improvements.  And perhaps some regressions too.
 In order to better duplicate the original, database operations have
 unfortunately become much more Informix specific, with much use of "rowid".
 
 Some of the improvements from version 0.05:
-Screen, Table, Master, and Detail buttons are implemented.
+Screen, Table, Master, Detail, and Current buttons are implemented.
 Most of the attributes and instructions now work.
 Query results more closely match the original utility's results.
 
@@ -122,5 +122,5 @@ Dallas, Texas 75234
 AUTHORS
 
   Martin Baer     2007/1/1  -  2007/7/14
-  Brenton Chapin  2007/3/16 -  2007/8/06  (chapinb@acm.org)
+  Brenton Chapin  2007/3/16 -  2007/9/12  (chapinb@acm.org)
 

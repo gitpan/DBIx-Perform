@@ -76,14 +76,18 @@ int  pf_hash_field_name(struct pf_PerformData  *pd, char  *name) {
     i ^= name[np++];
     i %= pf_MAXHASH;
   } while (name[np]);
-  j = pf_MAXHASH;
   if (pd->field[i].name[0] == 0) {
     strcpy(pd->field[i].name, name);
     return i;
   }
+  j = pf_MAXHASH;
   while (strcmp(pd->field[i].name, name) != 0 && j>0) {
     i += 7;  /* this value should not divide evenly into pf_MAXHASH */
     i %= pf_MAXHASH;
+    if (pd->field[i].name[0] == 0) {
+      strcpy(pd->field[i].name, name);
+      break;
+    }
     j--;
   }
   return  i;
@@ -133,11 +137,14 @@ fflush(pf_fherr);
 #endif
 
     switch (s[0]) {
-      case '<': strncpy(pd->funcparm[fp++], &(s[1]), pf_MAXSTR);
-	        s[pf_MAXSTR] = 0; break;
+      case '<': strncpy(pd->funcparm[fp], &(s[1]), pf_MAXSTR);
+	        pd->funcparm[fp++][pf_MAXSTR] = 0; break;
       case '>': pd->ret_val[0] = 1;  pd->ret_val[1] = 0;  break;
       case '&': strncpy(pd->funcname, &(s[1]), pf_MAXNAME);
-                s[pf_MAXNAME] = 0;
+                pd->funcname[pf_MAXNAME] = 0;
+                break;
+      case '@': strncpy(pd->dbname, &(s[1]), pf_MAXNAME);
+                pd->dbname[pf_MAXNAME] = 0;
                 break;
       case ';': more = 0; break;
       case '.': stay = 0; return stay;
@@ -147,6 +154,10 @@ fflush(pf_fherr);
           strncpy(ftname, s, ftval-s);
           ftname[(int)(ftval-s)] = 0;
           h = pf_hash_field_name(pd, ftname);
+#ifdef DEBUG
+fprintf(pf_fherr, "C: hash = %d\n", h);
+fflush(pf_fherr);
+#endif
           strcpy(pd->field[h].val, ftval+1);
           pd->field[h].changed = 0;
         }
@@ -159,7 +170,8 @@ fflush(pf_fherr);
   h = 0;
   while (h < pf_MAXHASH) {
     if (pd->field[h].name[0]) 
-      fprintf(pf_fherr, "C: %s = :%s:\n", pd->field[h].name, pd->field[h].val);
+      fprintf(pf_fherr, "C: %d %s = :%s:\n", h,
+	      pd->field[h].name, pd->field[h].val);
     h++;
   }
 fflush(pf_fherr);
@@ -193,6 +205,7 @@ fflush(pf_fherr);
   do {
     if (pd->field[h].name[0]) {
       if (pd->field[h].changed) {
+        pd->field[h].changed = 0;
         sprintf(outs, "%s %s\n", pd->field[h].name, pd->field[h].val);
         err = send(pd->sh, outs, strlen(outs), 0);
         if (err == -1) 
@@ -322,6 +335,11 @@ fflush(pf_fherr);
     switch (vtype) {
       case CCHARTYPE:
         strcpy((char *)v, pf_d.field[h].val);
+#ifdef DEBUG
+fprintf(pf_fherr, "C: val = '%s'\n", pf_d.field[h].val);
+fprintf(pf_fherr, "C: val = '%s'\n", (char *)v);
+fflush(pf_fherr);
+#endif
         break;
       case CSHORTTYPE:
         sscanf(pf_d.field[h].val, "%hd", (short int *)v);
@@ -375,6 +393,10 @@ void  pf_nxfield(char  *tag) {
 void  pf_msg(char  *msg, short  reverse, short  bell) {
    int  video;
 
+#ifdef DEBUG
+fprintf(pf_fherr, "C: printing msg :%s:\n", msg);
+fflush(pf_fherr);
+#endif
    video = 0;
    if (reverse) video = 7;
    fprintf(stdout, "\033[80B\033[160D\033[%dm%s\033[J", video, msg);
@@ -383,8 +405,10 @@ void  pf_msg(char  *msg, short  reverse, short  bell) {
 }
 
 
+extern  int opendb(char *);
+
 int  main(int  argc, char  **argv) {
-  int  stay;
+  int  stay, dbopen;
   char  snm[256];
 
   if (argc <= 1) {
@@ -411,11 +435,20 @@ fflush(pf_fherr);
   }
 
   pf_init_hash(&pf_d);
+  dbopen = 0;
 
   do {
     pf_d.funcname[0] = 0;
     stay = pf_extern_data_in(&pf_d);
     if (stay) {
+      if (!dbopen) {
+	int  rv;
+	rv = opendb(pf_d.dbname);
+	if (rv) {
+	  fprintf(stderr, "Error %d opening database %s\n", rv, pf_d.dbname);
+        }
+	dbopen = 1;
+      }
 #ifdef DEBUG
 fprintf(pf_fherr, "C: calling C function :%s:\n", pf_d.funcname);
 fflush(pf_fherr);

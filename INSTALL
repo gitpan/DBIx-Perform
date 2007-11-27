@@ -32,6 +32,8 @@ Optional:
 Sort-Versions	E/ED/EDAVIS/Sort-Versions-1.5.tar.gz
 Time-Hires      J/JH/JHI/Time-HiRes-1.9707.tar.gz
 
+*** Do not use Curses-1.16!  It has a bug in the function "chgat" ***
+
 Commands in gory detail
 -----------------------
 
@@ -112,14 +114,6 @@ $ make
 $ sudo make install
 $ cd ..
 
-$ dbaccess
-Password:
-DBACCESS:   Database
-DATABASE:   Create
-CREATE DATABASE >>stores
-CREATE DATABASE:  Exit
-EXIT:   Create-new-database
-
 $ tar xzf DBD-Informix-2007.0226.tar.gz
 $ cd DBD-Informix-2007.0226
 $ perl Makefile.PL
@@ -142,8 +136,8 @@ $ sudo make install
 $ cd ..
 
 
-$ tar xjf DBIx-Perform-0.692.tar.bz2
-$ cd DBIx-Perform-0.692.tar.bz2
+$ tar xjf DBIx-Perform-0.694.tar.bz2
+$ cd DBIx-Perform-0.694.tar.bz2
 $ perl Makefile.pl
 $ make
 $ sudo make install
@@ -193,7 +187,7 @@ $ cd ..
 # rm curses.h ncurses.h form.h menu.h panel.h
 
 $ export PATH=/usr/local/bin:$PATH
-$ export CURSES_CFLAGS="-I/usr/local/include/ncurses"
+$ export CURSES_CFLAGS="-I/usr/local/include -I/usr/local/include/ncurses"
 $ export CURSES_LDFLAGS="-L/usr/local/lib -lncurses"
 
 $ gzip -d < Curses-1.15.tar.gz | tar xf -
@@ -305,6 +299,81 @@ $ make
 $ su
 # make install
 
+------------------------------------------------------------------------
+HP-UX stand alone executable using the Perl ARchiver (PAR)
+
+To create executable files with PAR, need these Perl modules:
+
+AutoLoader-5.63
+Compress-Raw-Zlib-2.006
+IO-Compress-Base-2.006
+IO-Compress-Zlib-2.006
+Compress-Zlib-2.006
+Archive-Zip-1.20
+Getopt-ArgvFile-1.11
+ExtUtils-CBuilder-0.19
+ExtUtils-ParseXS-2.18
+Module-Build-0.2808
+Module-ScanDeps-0.76
+PAR-Dist-0.25
+PAR-0.976
+PAR-Packer-0.976
+
+A basic stand alone executable is not too difficult.
+Inside the DBIx-Perform-0.694 directory, do:
+
+$ pp -z 9 -M Curses/Widgets/Label.pm -M Perform/Widgets/TextField.pm bin/perform
+
+This creates a file "a.out".  Replace bin/perform with bin/pformbld for the
+other program.
+
+A lighter version that needs perl and 3 of the above modules, AutoLoader,
+PAR-Dist, and PAR, can be built by adding "-P" to the options for pp. 
+This creates a file "a.pl".
+
+However, the target system must have ncurses and the Informix shared libraries
+installed.
+
+A complete version that includes the shared libraries is difficult but possible.
+It is also not really a good idea, as start up time could be more than 1 min.
+First, there are two shared libraries, Informix.sl and Curses.sl, to build.
+Informix.sl depends on 6 Informix library files (see pp command at bottom for
+the list), and Curses.sl depends on the 4 libraries ncurses, form, menu, and
+panel.  Easiest (to avoid having to edit the paths hard coded into the shared
+libraries with a hex editor) is to copy all ten libraries to the root directory.
+Then use a feature of the HP-UX linker, ld:  the "+origin" flag.
++origin was added in a patch, so ld must be new enough to support this.
+Check the man page for ld to see if "+origin" is present.
+
+Build the Perl modules Curses-1.15 and DBD-Informix-2007.0226, but don't
+install yet.  Inside blib/arch/auto/ will be Curses/Curses.sl and
+Informix/informix.sl respectively.  These shared libraries must be linked
+differently, with the following commands:
+
+$ ld -b -L/ Curses.o  -o blib/arch/auto/Curses/Curses.sl +origin -lpanel +origin -lmenu +origin -lform +origin -lncurses +b \$ORIGIN
+
+$ ld -b Informix.o dbdimp.o dbdattr.o sqltoken.o sqltype.o ixblob.o odbctype.o kludge.o link.o esqlcver.o esqlc_v6.o -L/ +origin -lifsql +origin -lifasf +origin -lifgen +origin -lifos +origin -lifgls -lc -lm -lcrypt /usr/informix/lib/esql/checkapi.o +origin -lifglx -o blib/arch/auto/DBD/Informix/Informix.sl +b \$ORIGIN
+
+The libraries can be checked with chatr (or ldd).  All the links should be
+$ORIGIN//libncurses.sl and similar.  The default way would produce something
+like /usr/local/lib/libncurses.sl.  Now install these 2 modules.
+
+Next, there is a bug in PAR that prevents added libraries from being run.
+They are unpacked into a /tmp/par-username/cache-xxx directory without
+execute permission.  So, must change PAR-0.976/lib/PAR.pm.  After line
+884 (which says "$par_temp = $1;"), add the following, then rebuild and
+reinstall PAR:
+
+        foreach my $i (<$par_temp/lib*.sl>) {
+            chmod 0755, $i;
+        }
+
+
+Then issue the following command to build the PAR standalone executable:
+
+$ pp -z 9 -l /libncurses.sl -l /libpanel.sl -l /libmenu.sl -l /libform.sl -l /libifglx.sl -l /libifgls.sl -l /libifgen.sl -l /libifasf.sl -l /libifos.sl -l /libifsql.sl -M Curses/Widgets/Label.pm -M Perform/Widgets/TextField.pm bin/perform
+
+
 
 =========================================================================
 "make test" has not been updated, and will likely print many errors.
@@ -313,8 +382,11 @@ $ su
 
 USAGE
 "make install" installs scripts "pformbld" and "perform".
-To run a Perform script "example.per", 1st have appropriate environment
-variables set for the database.  The crucial one is DB_NAME.
+
+To run a Perform script "example.per":
+
+1st have appropriate environment variables set for the database.
+The crucial one is DB_NAME.
 
 
 Here is an example of the environment variables needed for Informix 7.2:
@@ -331,6 +403,7 @@ $ export DBD_INFORMIX_USERNAME2=informix
 
 Might also need to set the terminal:
 $ export TERM=vt100
+$ export TERMINFO=/usr/lib/terminfo
 
 And these are optional:
 $ export BGCOLOR=blue
@@ -363,36 +436,12 @@ Known problems
 
 problems
 --------
-
-On scripts that have "forests", (meaning, 2 or more groups of tables which
-are not joined to one another in any of the field associations), and which
-lookup data from the same tables, there can be "spillover".  That is,
-suppose there are 3 tables t1, t2, and t3.  t1 and t2 are not joined,
-but both t1 and t2 "lookup" data from t3.  Then if the user does a query on
-t1, data for fields associated with looking up t3 when joined to t1 may be
-displayed in both fields that join t1 and t3 in a lookup, and fields that join
-t2 and t3 in a lookup.
-
-Joins aren't always looked up.  (May only be composite joins, not sure.)
-Lookups are done whenever the user enters data in an associated field.
-That is, suppose there are tables, t1 and t2, with various columns, and
-2 fields f1 and f2.  Take the following:
-f1 = t1.c1 lookup f2 = t2.c2 joining t1.c1 = t2.c1
-When the user enters a value in f1, the program checks the join for a
-value from t2.c1 that matches the user's newly entered value for t1.c1 and
-if found, "looks up" t2.c2 from the same row where the matching t2.c1 was
-found and fills in f2 with the value from t2.c2.  This part works.
-A composite join is merely a join between more than one column of 2 tables.
-It seems the program is also supposed to fill in values on
-composite joins that are not lookups, as in this:
-f1 = t1.c1 = t2.c1;
-f2 = t1.c2 = t2.c2;
-f3 = t2.c3
-When the user enters data in f1 and f2, the program should fill in f3,
-but does not.
+None known.
 
 minor problems
 --------------
+Help screen doesn't come up in HP-UX.
+
 After a big slow query, the next query is slow.  After fetching something
 like 100,000 rows, the next query will be as slow even if it only fetches
 1000 rows.  If instead, only the smaller query is run, it will be fast.

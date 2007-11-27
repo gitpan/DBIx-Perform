@@ -5,7 +5,7 @@ use Parse::RecDescent;
 use base 'Exporter';
 use Data::Dumper;
 
-our $VERSION = '0.692';
+our $VERSION = '0.694';
 
 # exported methods
 our @EXPORT_OK = qw( &get_grammar );
@@ -110,13 +110,15 @@ our $grammar = <<'_EOGRAMMAR_';
              | /DATE/i
              | /INTERVAL/i
 
-   string_list : QUOTE NAME_STRING QUOTE  ","  string_list
+   string_list : QSTRING ","  string_list
                {
-                 $::res->{INCLUDE_VALUES} .= $item{NAME_STRING} . " ";
+		 $item{QSTRING} =~ /^"(.*)"$/;
+                 $::res->{INCLUDE_VALUES} .= $1 . ' ';
                }
-               | QUOTE NAME_STRING QUOTE
+               | QSTRING
                {
-                  $::res->{INCLUDE_VALUES} = $item{NAME_STRING} . " ";
+		  $item{QSTRING} =~ /^"(.*)"$/;
+                  $::res->{INCLUDE_VALUES} = $1 . ' ';
                }
 
    alphanum_list : ALPHANUM ","  alphanum_list
