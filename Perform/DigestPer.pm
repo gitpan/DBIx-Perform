@@ -71,7 +71,7 @@ use vars qw(@EXPORT_OK $VERSION %HEADING_WORDS);
 
 BEGIN {
     @EXPORT_OK = qw(digest digest_file convert_per_to_xml convert_per_to_yml );
-    $VERSION   = '0.694';
+    $VERSION   = '0.695';
 
     %HEADING_WORDS =
       map { ( $_, 1 ) } qw(screen tables attributes instructions end);
@@ -171,6 +171,7 @@ sub read_screen {
 
             # read size...
             $height = 0 + $parser->read_token();
+	    $height = 20 if $height > 20;
             my $by = $parser->read_token();
             $width = 0 + $parser->read_token();
             die "Expected 'by' but got '$by'"
@@ -367,17 +368,6 @@ sub table_post_processing {
         $field->{table_name} = $previous_table;
     }
 
-    # include attribute postprocessing
-    # before expanding field_tag joins
-
-    my $list = $field->{include_values};
-    if ($list) {
-        $field->{include_values} = undef;
-        my @array = split / /, $list;
-        foreach my $val (@array) {
-            $field->{include_values}->{$val} = 1;
-        }
-    }
     return $field;
 }
 
@@ -556,7 +546,7 @@ sub include_post_processing {
     my $field = shift;
 
     $field->{include} = 1
-      if defined( $field->{range_ceiling} );
+      if defined( $field->{range} );
     $field->{include} = 1
       if defined( $field->{include_values} );
 

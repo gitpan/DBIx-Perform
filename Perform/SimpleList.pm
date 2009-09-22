@@ -4,7 +4,7 @@ use base 'Exporter';
 use Data::Dumper;
 use DBI;
 
-our $VERSION = '0.694';
+our $VERSION = '0.695';
 
 our @EXPORT_OK = qw(	&new
   &is_empty
@@ -330,7 +330,7 @@ sub stuff_list {
         }
     }
 
-    $GlobalUi->display_comment("DB Error on prepare");
+    $GlobalUi->display_comment($GlobalUi->{error_messages}->{'db16e'});
     $GlobalUi->display_error("$DBI::errstr");
     return undef;
 }

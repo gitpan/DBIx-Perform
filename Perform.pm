@@ -16,7 +16,7 @@ use DBIx::Perform::Instruct;
 use base 'Exporter';
 use Data::Dumper;
 
-our $VERSION = '0.694';
+our $VERSION = '0.695';
 
 use constant 'KEY_DEL' => '330';
 
@@ -280,7 +280,7 @@ sub do_screen {
 
     my $cf   = $app->getField('form_name');
     my $form = $app->getForm($cf);
-    $GlobalUi->update_info_message( $form, 'screen' );
+#    $GlobalUi->update_info_message( $form, 'screen' );
     next_screen();
 
     $GlobalUi->clear_display_error;
@@ -304,7 +304,7 @@ sub refresh_row {
     my $current_table = $GlobalUi->get_current_table_name;
     my $row;
     my $sth;
-    $GlobalUi->update_info_message( $form, 'current' );
+#    $GlobalUi->update_info_message( $form, 'current' );
     $form->setField( 'DONTSWITCH', 1 );
 
     my $refetcher = $INSERT_RECALL{$driver} || \&Default_refetch;
@@ -362,7 +362,7 @@ sub do_view {
 
 sub do_output {
     my $form = $GlobalUi->{form_object};
-    $GlobalUi->update_info_message( $form, 'output' );
+#    $GlobalUi->update_info_message( $form, 'output' );
     $form->setField( 'DONTSWITCH', 1 );
     $GlobalUi->clear_comment_and_error_display;
     my $m = $GlobalUi->{error_messages}->{'th26d'};
@@ -448,7 +448,7 @@ sub do_table {
 
     warn "Attribute tables: @tables" if $::TRACE_DATA;
 
-    $GlobalUi->update_info_message( $form, 'table' );
+#    $GlobalUi->update_info_message( $form, 'table' );
     $GlobalUi->clear_comment_and_error_display;
     $form->setField( 'DONTSWITCH', 1 );
 
@@ -485,31 +485,21 @@ sub doquit {
 }
 
 sub do_yes {
-
     my $key  = shift;
     my $form = shift;
 
-    my $app = $GlobalUi->{app_object};
-
-    my %info_msgs = %{ $GlobalUi->{info_messages} };
-
     do_remove( $key, $form );
 
-    $GlobalUi->change_focus_to_button( $form, 'perform' );
-    $GlobalUi->update_info_message( $form, 'remove' );
-    my $wid    = $form->getWidget('ModeButtons');
-    $wid->setField('VALUE', 6);
+    do_no( $key, $form);
 }
 
 sub do_no {
     my $key  = shift;
     my $form = shift;
 
-    my $app       = $GlobalUi->{app_object};
-    my %info_msgs = %{ $GlobalUi->{info_messages} };
-
+    warn "TRACE: entering do_no\n" if $::TRACE;
     $GlobalUi->change_focus_to_button( $form, 'perform' );
-    $GlobalUi->update_info_message( $form, 'remove' );
+#    $GlobalUi->update_info_message( $form, 'remove' );
     my $wid    = $form->getWidget('ModeButtons');
     $wid->setField('VALUE', 6);  #'6' is the "Remove" button
 }
@@ -536,7 +526,7 @@ sub changemode {
 
     # change the UI mode
     $GlobalUi->change_mode_display( $form, $mode );
-    $GlobalUi->update_info_message( $form, $mode );
+#    $GlobalUi->update_info_message( $form, $mode );
 
     my $scr = find_best_screen_for_table($table);
     if (goto_screen("Run$scr")) {
@@ -582,7 +572,7 @@ sub do_master {
     my $app  = $GlobalUi->{app_object};
     my $form = $GlobalUi->get_current_form;
 
-    $GlobalUi->update_info_message( $form, 'master' );
+#    $GlobalUi->update_info_message( $form, 'master' );
     $GlobalUi->clear_comment_and_error_display;
     $form->setField( 'DONTSWITCH', 1 );
 
@@ -602,7 +592,7 @@ sub do_master {
             my $scr = find_best_screen_for_table($tbl);
             goto_screen("Run$scr");
 
-            $GlobalUi->update_info_message( $form, 'master' );
+#            $GlobalUi->update_info_message( $form, 'master' );
             $GlobalUi->clear_comment_and_error_display;
             $form->setField( 'DONTSWITCH', 1 );
 
@@ -636,7 +626,7 @@ sub do_detail {
     my $form    = $GlobalUi->get_current_form;
     my $subform = $form->getSubform('DBForm') || $form;
 
-    $GlobalUi->update_info_message( $form, 'detail' );
+#    $GlobalUi->update_info_message( $form, 'detail' );
     $GlobalUi->clear_comment_and_error_display;
     $form->setField( 'DONTSWITCH', 1 );
 
@@ -657,13 +647,14 @@ sub do_detail {
     }
 
     if ( $ct eq $master ) {       # switch to detail from master
+	my $master_is_empty = $RowList->is_empty;
         if ( my $tb = $GlobalUi->go_to_table($detail) ) {
 
             my $tbl = $GlobalUi->get_current_table_name;
             my $scr = find_best_screen_for_table($tbl);
             goto_screen("Run$scr");
 
-            $GlobalUi->update_info_message( $form, 'master' );
+#            $GlobalUi->update_info_message( $form, 'master' );
             $GlobalUi->clear_comment_and_error_display;
             $form->setField( 'DONTSWITCH', 1 );
 
@@ -674,7 +665,11 @@ sub do_detail {
 #            display_row( $form, $RowList->current_row );
 
             clear_detail_textfields($master, $detail);
-            do_query;
+	    if ( $master_is_empty ) {
+                $GlobalUi->display_error('no11d');
+            } else {
+                do_query;
+            }
 
             warn "TRACE: leaving do_detail\n" if $::TRACE;
             return;
@@ -684,8 +679,7 @@ sub do_detail {
     }
 
     $form->setField( 'DONTSWITCH', 1 );
-    my $msg = $GlobalUi->{error_messages}->{'no48.'};
-    $GlobalUi->display_error($msg);
+    $GlobalUi->display_error('no48.');
     warn "TRACE: leaving do_detail\n" if $::TRACE;
     return undef;
 }
@@ -695,7 +689,7 @@ sub do_previous {
     my $form = shift;
     my $app  = $GlobalUi->{app_object};
 
-    $GlobalUi->update_info_message( $form, 'previous' );
+#    $GlobalUi->update_info_message( $form, 'previous' );
     $GlobalUi->clear_comment_and_error_display;
     $form->setField( 'DONTSWITCH', 1 );
     $GlobalUi->clear_display_error;
@@ -712,7 +706,7 @@ sub do_previous {
         # at the end of the list, switch to "Previous" button
         $form->getWidget('ModeButtons')->setField( 'VALUE', 2 );
         $GlobalUi->display_error('no41.');
-        $GlobalUi->update_info_message( $form, 'previous' );
+#        $GlobalUi->update_info_message( $form, 'previous' );
         return unless $app->{deletedrow};
     }
     my $distance = $app->{'number'};
@@ -737,7 +731,7 @@ sub do_next {
     my $form = shift;
     my $app  = $GlobalUi->{app_object};
 
-    $GlobalUi->update_info_message( $form, 'next' );
+#    $GlobalUi->update_info_message( $form, 'next' );
     $GlobalUi->clear_display_error;
     $form->setField( 'DONTSWITCH', 1 );
     $GlobalUi->clear_display_error;
@@ -754,7 +748,7 @@ sub do_next {
         # at the end of the list, switch to "Next" button
         $form->getWidget('ModeButtons')->setField( 'VALUE', 1 );
         $GlobalUi->display_error('no41.');
-        $GlobalUi->update_info_message( $form, 'next' );
+#        $GlobalUi->update_info_message( $form, 'next' );
         return unless $app->{deletedrow};
     }
     my $distance = $app->{'number'};
@@ -800,7 +794,7 @@ sub addmode_resume {
 sub updatemode {
     my $form = $GlobalUi->get_current_form;
 
-    $GlobalUi->update_info_message( $form, 'update' );
+#    $GlobalUi->update_info_message( $form, 'update' );
     return if check_rows_and_advise($form);
 
     return if changemode( 'update', \&updatemode_resume );
@@ -837,7 +831,7 @@ sub removemode {
     my @buttons   = $GlobalUi->{buttons_yn};
     my $app       = $GlobalUi->{app_object};
 
-    $GlobalUi->update_info_message( $form, 'remove' );
+#    $GlobalUi->update_info_message( $form, 'remove' );
     $form->setField( 'DONTSWITCH', 1 );
     $GlobalUi->clear_comment_and_error_display;
 
@@ -850,8 +844,8 @@ sub removemode {
     my $actkey = trigger_ctrl_blk( 'before', 'remove', $table );
     return if $actkey eq "\cC";
 
-    $GlobalUi->switch_buttons( $form, 'REMOVE', @buttons );
-    $GlobalUi->update_info_message( $form, 'yes' );
+    $GlobalUi->switch_buttons( $form );
+#    $GlobalUi->update_info_message( $form, 'yes' );
     my $wid    = $form->getWidget('ModeButtons');
     $wid->setField('VALUE', 0);
 }
@@ -865,7 +859,7 @@ sub do_remove {
 
     my $app  = $GlobalUi->{app_object};
     my $form = $GlobalUi->get_current_form;
-    $GlobalUi->update_info_message( $form, 'remove' );
+#    $GlobalUi->update_info_message( $form, 'remove' );
 
     return if check_rows_and_advise($form);
 
@@ -921,16 +915,23 @@ sub OnFieldEnter {
     my $fo = $fl->get_field_object( $table, $field_tag );
     die "undefined field object" unless defined($fo);
 
-    my $comment = $fo->{comments};
-    $comment
-      ? $GlobalUi->display_comment($comment)
-      : $GlobalUi->clear_display_comment;
-
+    my $mode = $subform->getField('editmode');
     my $widget = $subform->getWidget($field_tag);
-    $widget->{CONF}->{'EXIT'} = 0;
+    my $val = $fo->get_value;
+    $val = '' unless defined $val;
+    if (length($val) <= $widget->{CONF}->{COLUMNS} || $mode ne 'query') {
+        $widget->{CONF}->{'EXIT'} = 0;
+
+        my $comment = $fo->{comments};
+        $comment
+          ? $GlobalUi->display_comment($comment)
+          : $GlobalUi->clear_display_comment;
+    } else {
+        $widget->{CONF}->{'EXIT'} = 1;
+        $widget->{CONF}->{OVERFLOW} = 1;
+    }
 
     # do any BEFORE control blocks.
-    my $mode = $subform->getField('editmode');
     my $actkey = trigger_ctrl_blk_fld( 'before', "edit$mode", $fo );
 
     bail_out() if ( $actkey eq "\cC" );    # 3 is ASCII code for ctrl-c
@@ -941,7 +942,9 @@ sub OnFieldEnter {
 sub OnFieldExit {
     my ( $field_tag, $subform, $key ) = @_;
 
-    return if $subform->getField('EXIT');
+    my $widget = $subform->getWidget($field_tag);
+    my $ovf = $widget->{CONF}->{OVERFLOW} || 0;
+    return if $subform->getField('EXIT') && !$ovf;
     warn "TRACE: entering OnFieldExit\n" if $::TRACE;
 
     my $app    = $GlobalUi->{app_object};
@@ -949,7 +952,6 @@ sub OnFieldExit {
     my $fl     = $GlobalUi->get_field_list;
     my $table  = $GlobalUi->get_current_table_name;
     my $fo     = $fl->get_field_object( $table, $field_tag );
-    my $widget = $subform->getWidget($field_tag);
     my $mode   = $subform->getField('editmode');
 
     # erase comments and error messages
@@ -971,6 +973,26 @@ sub OnFieldExit {
         $GlobalUi->set_screen_value( $tag, $val );
     }
 
+    if ($mode eq 'query' && length($fo->get_value) > $fo->{size} || $ovf ) {
+        my $wid = $form->getWidget('Comment');
+        my $val = $GlobalUi->get_screen_value($field_tag);
+        $wid->setField( 'VALUE', $val );
+        my $cursorpos = $widget->getField( 'CURSORPOS' );
+        $wid->{CONF}->{CURSORPOS} = $cursorpos;
+        my $mwh = $form->{MWH};
+        $wid->setField( 'NAME', $fo->{field_tag} );
+        $wid->{CONF}->{FOCUSSWITCH} = "\t\n\cp\cw\cc\ck\c[\cf\cb";
+        $wid->{CONF}->{FOCUSSWITCH_MACROKEYS} = [ KEY_UP, KEY_DOWN, KEY_DEL ];
+        $wid->{CONF}->{EXIT} = 0;
+        $wid->draw($mwh);
+        $key = $wid->execute($mwh);
+        $val = $wid->getField( 'VALUE' );
+        $wid->setField( 'NAME', '');
+        $widget->{CONF}->{OVERFLOW} = 0;
+        $fo->set_value($val);
+        $GlobalUi->set_screen_value( $field_tag, $val );
+    }
+    $widget->setField( 'CURSORPOS', 0 );
     if ($mode ne "query" && !$GlobalUi->{newfocus}) {
         my $good = 1;
         my $val = $GlobalUi->get_screen_value($field_tag);
@@ -1025,7 +1047,7 @@ sub OnFieldExit {
 	return if $GlobalUi->{newfocus};
         my $wid = $form->getWidget('ModeButtons');
         my $mode =
-          lc( ( $wid->getField('LABELS') )->[ $wid->getField('VALUE') ] );
+          lc( ( $wid->getField('NAMES') )->[ $wid->getField('VALUE') ] );
         my $modesubs = $GlobalUi->{mode_subs};
         my $sub      = $modesubs->{$mode};       # mode subroutine
 
@@ -1039,7 +1061,7 @@ sub OnFieldExit {
         }
     }
     elsif ( $key eq "\cw" ) {
-        $GlobalUi->display_help_screen('field');
+        $GlobalUi->display_help_screen(1);
         $GlobalUi->{'newfocus'} = $GlobalUi->{'focus'}
           unless $GlobalUi->{'newfocus'};
         return;
@@ -1055,7 +1077,7 @@ sub OnFieldExit {
         || $key eq KEY_STAB )
     {
         my $ct   = $GlobalUi->get_current_table_name;
-        my $mode = $subform->getField('editmode');
+#        my $mode = $subform->getField('editmode');
 
         my @taborder =
           DBIx::Perform::Forms::temp_generate_taborder( $ct, $mode );
@@ -1073,7 +1095,7 @@ sub OnFieldExit {
     }
     elsif ( $key eq "\cF" ) {
         my $ct   = $GlobalUi->get_current_table_name;
-        my $mode = $subform->getField('editmode');
+#        my $mode = $subform->getField('editmode');
         my @taborder =
           DBIx::Perform::Forms::temp_generate_taborder( $ct, $mode );
         my %taborder  = map { ( $taborder[$_], $_ ) } ( 0 .. $#taborder );
@@ -1111,7 +1133,7 @@ sub OnFieldExit {
     }
     elsif ( $key eq "\cB" ) {
         my $ct   = $GlobalUi->get_current_table_name;
-        my $mode = $subform->getField('editmode');
+#        my $mode = $subform->getField('editmode');
         my @taborder =
           DBIx::Perform::Forms::temp_generate_taborder( $ct, $mode );
         my %taborder  = map { ( $taborder[$_], $_ ) } ( 0 .. $#taborder );
@@ -1228,8 +1250,10 @@ warn "verify_join\n$query\n$val\n" if $::TRACE;
     $sth->execute(($val));
     my $ref = $sth->fetchrow_array;
     return 1 if $ref;
-    $GlobalUi->display_error(" This is an invalid value --"
-       . " it does not exist in \"$dt\" table ");
+    my $m = sprintf($GlobalUi->{error_messages}->{'th55e'}, $dt);
+    $GlobalUi->display_error($m);
+#    $GlobalUi->display_error(" This is an invalid value --"
+#       . " it does not exist in \"$dt\" table ");
     return 0;
 }
 
@@ -1270,8 +1294,10 @@ warn "verify_composite_joins:\n$query\n"
                 $ref = $sth->fetchrow_array if $sth;
                 return 1 if $ref;
 
-                $GlobalUi->display_error(" Invalid value -- its composite "
-                  . "value does not exist in \"$tbl\" table ");
+                my $m = sprintf($GlobalUi->{error_messages}->{'in61e'}, $tbl);
+                $GlobalUi->display_error($m);
+#                $GlobalUi->display_error(" Invalid value -- its composite "
+#                  . "value does not exist in \"$tbl\" table ");
                 return 0;
             }
         }       
@@ -2126,9 +2152,9 @@ warn "entering execute_query\n" if $::TRACE;
 
     # Print outcome of query to status bar
     if    ( $size == 0 ) { $GlobalUi->display_status('no11d'); }
-    elsif ( $size == 1 ) { $GlobalUi->display_status('1 8d'); }
+    elsif ( $size == 1 ) { $GlobalUi->display_status('1_8d'); }
     else {
-        my $msg = "$size " . $err->{'ro7d'};
+        my $msg = sprintf($err->{'ro7d'}, $size);
         $GlobalUi->display_status($msg);
     }
 
@@ -2210,6 +2236,8 @@ sub do_subscript {
     my $max = $fo->{subscript_ceiling}-1;
     my $tag = $fo->get_field_tag;
     my $v = $GlobalUi->get_screen_value($tag);
+    $str = '' if !defined $str;
+    $v   = '' if !defined $v;
     my @chars = split //, $str;
     my @vcs   = split //, $v;
     my $max2 = $min + length $v;
@@ -2219,12 +2247,13 @@ sub do_subscript {
         for (; $i >= $min; $i--) {
             $chars[$i] = $vcs[$i-$min];
         }
-        for (; $i >= 0; $i--) {
-	    $chars[$i] = ' ' if !defined $chars[$i] || $chars[$i] eq '';
-        }
+    }
+    for ($i = $max; $i >= 0; $i--) {
+	$chars[$i] = ' ' if !defined $chars[$i] || $chars[$i] eq '';
     }
     $str = join ('', @chars);
-#warn ":$v: is $min to $max of str =\n$str\n";
+    $str =~ s/\s+$//;
+#warn ":$v: is $min to $max of str =\n:$str:\n";
     return $str;
 }
 
@@ -2265,8 +2294,7 @@ sub do_add {
 
  	# special handling for subscript attribute
         if (   defined $fo->{subscript_floor}) {
-            my $str = $vals{$col} || '';
-	    $vals{$col} = do_subscript($fo, $str);
+	    $vals{$col} = do_subscript($fo, $vals{$col});
             next;
         }
 	else {
@@ -2277,7 +2305,9 @@ sub do_add {
 
         # add col and val for the sql add
 
-        $ca{$col} = $v if $v ne '';
+	if (defined $v) {
+            $ca{$col} = $v if $v ne '';
+	}
     }
 
     foreach my $col (keys %vals) {
@@ -2399,8 +2429,7 @@ sub do_update {
 
 #        # special handling for subscript attribute
         if (   defined $fo->{subscript_floor}) {
-            my $str = $vals{$tnc} || '';
-	    $vals{$tnc} = do_subscript($fo, $str);
+	    $vals{$tnc} = do_subscript($fo, $vals{$tnc});
             push @{$sstags{$tnc}}, $tag;
             next;
         }
@@ -2426,12 +2455,14 @@ sub do_update {
     foreach my $tnc (keys %vals) {
         my $alias = $aliases->{$tnc};
         my ($col) = $tnc =~ /\.(\w+)/;
-#        my $fv = $cur_row->{$alias};
         my $idx = $RowList->{aliases}->{$alias};
         my $fv = $cur_row->[$idx];
         my $v = $vals{$tnc};
 #warn "$tnc = :$v:$fv\n";
-        if (defined $v && defined $fv && $v ne $fv ) {
+        my $dv = defined $v ? 1 : 0;
+        my $dfv = defined $fv ? 1 : 0;
+        if (($dv && $dfv && $v ne $fv)
+	    || ($dv ^ $dfv) ) {
             $upds{$col}           = $v;
             $aliased_upds{$alias} = $v;
             foreach my $tag (@{$sstags{$tnc}}) {

@@ -1,4 +1,3 @@
-
 package DBIx::Perform::Field;
 
 use strict;
@@ -11,7 +10,7 @@ use Parse::RecDescent;
 use Data::Dumper;
 use base 'Exporter';
 
-our $VERSION = '0.694';
+our $VERSION = '0.695';
 
 # debug: set (unset) in runtime env
 $::TRACE      = $ENV{TRACE};
@@ -246,11 +245,8 @@ sub parse_line {
         $val = $href->{QUERYCLEAR};
         $self->{queryclear} = $val if defined $val;
 
-        $val = $href->{RANGE_CEILING};
-        $self->{range_ceiling} = $val if defined $val;
-
-        $val = $href->{RANGE_FLOOR};
-        $self->{range_floor} = $val if defined $val;
+        $val = $href->{RANGE};
+        $self->{range} = $val if defined $val;
 
         $val = $href->{REQUIRED};
         $self->{required} = $val if defined $val;
@@ -359,10 +355,10 @@ sub print {
     print STDERR "   picture:          $str\n" if defined($str);
     $str = $self->{queryclear};
     print STDERR "   queryclear:       $str\n" if defined($str);
-    $str = $self->{range_floor};
-    print STDERR "   range floor:      $str\n" if defined($str);
-    $str = $self->{range_ceiling};
-    print STDERR "   range ceiling:    $str\n" if defined($str);
+#    $str = $self->{range_floor};
+#    print STDERR "   range floor:      $str\n" if defined($str);
+#    $str = $self->{range_ceiling};
+#    print STDERR "   range ceiling:    $str\n" if defined($str);
     $str = $self->{required};
     print STDERR "   required:         $str\n" if defined($str);
     $str = $self->{reverse};
@@ -591,9 +587,8 @@ sub display_error_message {
 sub is_any_numeric_db_type {
     my $self = shift;
 
-    my $db_type = $self->{db_type};
-
-    my ( $type, $more ) = split( /\(/, $db_type );
+    my $db_type = uc ($self->{db_type} || '');
+    my ($type) = $db_type =~ /([^(]*)/;
 
     if (   $type eq "FLOAT"
         || $type eq "SMALLFLOAT"
@@ -615,9 +610,8 @@ sub is_any_numeric_db_type {
 sub is_real_db_type {
     my $self = shift;
 
-    my $db_type = $self->{db_type};
-
-    my ( $type, $more ) = split( /\(/, $db_type );
+    my $db_type = uc ($self->{db_type} || '');
+    my ($type) = $db_type =~ /([^(]*)/;
 
     if (   $type eq "FLOAT"
         || $type eq "SMALLFLOAT"
@@ -637,9 +631,8 @@ sub is_integer_db_type {
 
     my $self = shift;
 
-    my $db_type = uc $self->{db_type};
-
-    my ( $type, $more ) = split( /\(/, $db_type );
+    my $db_type = uc ($self->{db_type} || '');
+    my ($type) = $db_type =~ /([^(]*)/;
 
     if (   $type eq "INTEGER"
         || $type eq "INT"
@@ -656,9 +649,9 @@ sub is_numeric_db_type {
 
     my $self = shift;
 
-    my $db_type = uc $self->{db_type};
+    my $db_type = uc ($self->{db_type} || '');
 
-    my ( $type, $more ) = split( /\(/, $db_type );
+    my ($type) = $db_type =~ /([^(]*)/;
 
     if (   $type eq "NUMERIC"
         || $type eq "DECIMAL"
@@ -675,48 +668,46 @@ sub parse_db_type {
     my $self = shift;
 
     if ( defined $self->{displayonly} ) {
-        my $type = uc $self->{type};
+        my $type = uc ($self->{type} || '');
         return ( $type, 80 );    # guess at max
     }
 
     my ( $type, $size, $dc, $more, $mn );
-    my $db_type = $self->{db_type};
+    my $db_type = ($self->{db_type} || '');
 
     ( $type, $more ) = split( /\(/, $db_type );
 
-    if ( defined $type ) {
-        if (   $type eq "INTEGER"
-            || $type eq "INT"
-            || $type eq "SMALLINT"
-            || $type eq "FLOAT"
-            || $type eq "SMALLFLOAT"
-            || $type eq "REAL"
-            || $type eq "MONEY"
-            || $type eq "SERIAL" )
-        {
+    if (   $type eq "INTEGER"
+        || $type eq "INT"
+        || $type eq "SMALLINT"
+        || $type eq "FLOAT"
+        || $type eq "SMALLFLOAT"
+        || $type eq "REAL"
+        || $type eq "MONEY"
+        || $type eq "SERIAL" )
+    {
 
-            # return an arbitrary, large value for size
-            return ( $type, 10000 );
-        }
-
-        if (   $type eq "NUMERIC"
-            || $type eq "DECIMAL"
-            || $type eq "DEC" )
-        {
-
-            # handle n and m values for decimal digits
-
-            ( $size, $mn ) = split( /\)/, $more );
-            my ( $n, $m ) = split( /\./, $mn );
-            $size = $n + $m + 1;
-            warn "decimal: n: $n, m: $n, type: $type size: $size"
-              if $::TRACE_DATA;
-
-            return ( $type, $size );
-        }
-
-        if ( $type eq "DATE" ) { return ( $type, 9 ); }
+        # return an arbitrary, large value for size
+        return ( $type, 10000 );
     }
+
+    if (   $type eq "NUMERIC"
+        || $type eq "DECIMAL"
+        || $type eq "DEC" )
+    {
+
+        # handle n and m values for decimal digits
+
+        ( $size, $mn ) = split( /\)/, $more );
+        my ( $n, $m ) = split( /\./, $mn );
+        $size = $n + $m + 1;
+        warn "decimal: n: $n, m: $n, type: $type size: $size"
+          if $::TRACE_DATA;
+
+        return ( $type, $size );
+    }
+
+    if ( $type eq "DATE" ) { return ( $type, 9 ); }
 
     # handle the rest
 
@@ -806,7 +797,7 @@ sub format_value_for_display {
         || $dtype eq 'SMALLFLOAT'
         || $dtype eq 'REAL' )
     {
-        $val .= '.0' if $val !~ /\./ && $val ne '';
+        $val .= '.0' if $val =~ /^\s*[+-]?\d+$/;
     }
 
     ( $val, $rc ) = $self->handle_subscript_attribute( $val )
@@ -1221,6 +1212,11 @@ sub handle_money_attribute {
     return ( $screen_value, 0 );
 }
 
+sub is_num {
+    my $n = shift;
+    return 1 if $n =~ /^[+-]?\d+(\.\d+)?$/;
+    return 0;
+}
 # checks the field value against the attributes
 # to determine if a sql operation is in order
 # returns undef on success
@@ -1255,7 +1251,7 @@ sub validate_input {
         }
         if ( !defined $self->{null_ok} ) {
             my $col = $self->{column_name};
-            my $m = " The column \"$col\" does not allow null values.  ";
+            my $m = sprintf($GlobalUi->{error_messages}->{'th41.'}, $col);
             $GlobalUi->display_error($m);
             $GlobalUi->change_focus_to_field_in_current_table($tag);
             return -1;
@@ -1265,31 +1261,30 @@ sub validate_input {
     #INCLUDE
     if ( defined( $self->{include} ) ) {
         $value =~ s/\s*$// if $value;
+	return 0 if $value eq '' && defined $self->{null_ok};
 
         # INCLUDE - list of values
         my $inc_vals = $self->{include_values};
         if ( defined($inc_vals) ) {
-            my $valid = $inc_vals->{ uc $value };
-            if ( !$valid ) {
-                $GlobalUi->display_error('th44s');
-                $GlobalUi->change_focus_to_field_in_current_table($tag);
-                return -1;
-            }
-        }
+	    return 0 if $inc_vals->{ uc $value };
+	}
 
         # INCLUDE - numeric range
-        my $ceiling = $self->{range_ceiling};
-        my $floor   = $self->{range_floor};
-        if ( defined $ceiling && defined $floor && defined $value ) {
-            if ( $value ne '') {
-                if ( ( $value < $floor ) || ( $value > $ceiling ) ) {
-                    warn "TRACE: leaving validate_input on fail\n" if $::TRACE;
-                    $GlobalUi->display_error('th44s');
-                    $GlobalUi->change_focus_to_field_in_current_table($tag);
-                    return -1;
-                }
-            }
+	my $ranges = $self->{range};
+	foreach my $r (keys(%$ranges)) {
+	    my $r2 = $ranges->{$r};
+	    if (is_num($r) && is_num($r2)) {
+	        return 0 if ($value >= $r && $value <= $r2);
+	    } else {
+		$r  =~ s/^"(.*)"$/$1/;
+		$r2 =~ s/^"(.*)"$/$1/;
+		return 0 if ($value ge $r && $value le $r2);
+	    }
         }
+
+        $GlobalUi->display_error('th44s');
+        $GlobalUi->change_focus_to_field_in_current_table($tag);
+        return -1;
     }
 
     if ($self->is_any_numeric_db_type) {

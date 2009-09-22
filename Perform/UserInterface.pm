@@ -11,10 +11,11 @@ use DBIx::Perform::Forms;
 use DBIx::Perform::Widgets::ButtonSet;
 use DBIx::Perform::SimpleList;
 use DBIx::Perform::FieldList;
+use DBIx::Perform::Messages;
 use base 'Exporter';
 use Data::Dumper;
 
-our $VERSION = '0.694';    # valtech
+our $VERSION = '0.695';
 
 use constant 'KEY_DEL' => '330';
 
@@ -67,7 +68,6 @@ our @EXPORT_OK = qw(
   &old_set_screen_value
   &set_screen_value
   &change_mode_display
-  &button_to_index
   &change_focus_to_button
   &change_focus_to_field_in_current_table
   &add_field_list_to_screens
@@ -109,198 +109,28 @@ our $TABLENAME_START = $TABLENUM_START + $TABLENUM_SIZE;
 our $Global_app_ref;
 our %Button_handlers;
 
-our @Button_labels =
-  [
-    qw( Query Next Previous View Add Update Remove Table Screen Current Master Detail Output Exit)
-  ];
-our @Buttons_yn = [qw(Yes No)];
+our $lang = $DBIx::Perform::Messages::languages{$ENV{LANG} || 'en_US'};
+our $msgs = $DBIx::Perform::Messages::messages[$lang];
+our $msgs_en = $DBIx::Perform::Messages::messages[0];
+our @Button_names = @$msgs_en[3..16];
+our @Button_labels = @$msgs[3..16];
+our @Button_yn_names = @$msgs_en[17..18];
+our @Buttons_yn = @$msgs[17..18];
 
 our %Button_messages = (
-    query => \
-      "ESCAPE queries.  INTERRUPT discards query.  ARROW keys move cursor.",
-    add => \
-      "ESCAPE adds new data.  INTERRUPT discards it.  ARROW keys move cursor.",
-    update => \"ESCAPE changes data.  INTERRUPT discards changes.",
-    output => \"Enter output file (default is perform.out): ",
-    master => \"Not sure if there is a Master button message. ",
-    detail => \"Not sure if there is a Detail button message. ",
+    query  => $msgs->[19],
+    add    => $msgs->[20],
+    update => $msgs->[21],
+    output => $msgs->[22],
 );
-our %Info_messages = (
-    'query'    => 'Searches the active database table.',
-    'next'     => 'Shows the next row in the Current List.',
-    'previous' => 'Shows the previous row in the Current List.',
-    'view'     => 'Runs editor commands to display BLOB contents.',
-    'add'      => 'Adds new data to the active database table.',
-    'update'   => 'Changes this row in the active database table.',
-    'remove'   => 'Deletes a row from the active database table.',
-    'table'    => 'Selects the current table.',
-    'screen'   => 'Shows the next page of the form.',
-    'current'  => 'Displays the current row of the current table.',
-    'master'   => 'Selects the master table of the current table.',
-    'detail'   => 'Selects a detail table of the current table.',
-    'output'   => 'Outputs selected rows in form or report format.',
-    'yes'      => 'Removes this row from the active table.',
-    'no'       => 'Does NOT remove this row from the active table.',
-    'exit'     => 'Returns to the INFORMIX-SQL Menu.',
-);
+our %Info_messages;
+our %Runtime_error_messages;
 
-# A first attempt at NLS  - maybe it should be in it own package
-our %Runtime_error_messages = (
-    'no41.'    => ' There are no more rows in the direction you are going  ',
-    'th26d'    => 'This feature is not supported',
-    'no14.'    => 'No button subroutine for this button.',
-    'th15.'    => ' There are no rows in the current list  ',
-    'no47.'    => ' No master table has been specified for this table  ',
-    'no48.'    => ' No detail table has been specified for this table  ',
-    'th40s'    => 'There are no rows satisfying the conditions',
-    'db16e'    => 'DB Error on prepare',
-    'er11d'    => ' Error in field  ',
-    'de18d'    => 'Detail:  row(s) found',
-    'no16.'    => 'No query is active.',
-    'no27k'    => 'No such field in control block',
-    'un35k'    => 'Unrecognized operator in control block',
-    'in_block' => 'In control block',
-    'no51:'    => 'No such field found while processing LOOKUP attribute:',
-    'da21p'    => 'Database Error In LOOKUP',
-    'ne53k '   => 'Neither field, number nor quoted string in control block',
-    'da11r'    => 'Database error',
-    'se09.'    => 'Searching..',
-    'se10.'    => 'Searching...',
-    'se11.'    => 'Searching....',
-    'no11d'    => 'no rows found',
-    '1 8d'     => '1 row found',
-    'ro7d'     => 'rows found',
-    'ro6d'     => 'Row added',
-    'ro8d'     => 'Row deleted',
-    'no14d'    => 'No fields changed',
-    'ro10d'    => 'row affected',
-    'ro6d'     => 'Row added',
-    'sq15e'    => 'SQL insert failure',
-    'ad21e'    => 'add: SQL prepare failure',
-    'fa39e'    => 'Failed to update display from the database',
-    'fi22t'    => 'Field format is incorrect',
-    'to36d'    => 'Too few characts or numbers for this Field',
-    'to37d'    => 'Too many characts or numbers for this Field',
-    'th44s'    => 'This value is not among the valid possibilities',
-    'wr23d'    => 'Wrong format for this Field',
-    'th34s'    => 'This column does not allow null values',
-    'th33e'    => 'This field requires an entered value',
-    'pe31e'    => 'permissable values are unavailable',
-    'th47w'    => ' The current row position contains a deleted row',
-    'ro54.'    => 'Row data was not current.  Refreshed with current data.',
-    'so34.'    => 'Someone else has updated this row.',
-    'so35.'    => 'Someone else has deleted this row.',
-);
-
-our %Help_screens = (
-    top => "DBIx::Perform.\r
-\r
-The PERFORM Menu presents you with the following options:\r
-\r
- > Query            Searches the table\r
- > Next             Displays the next row in the Current List\r
- > Previous         Displays the previous row in the Current List\r
- > View             Runs editor commands to display BLOB contents.\r
-                    BLOB data types are available only on OnLine systems.\r
- > Add              Adds data to the active table\r
- > Update           Changes a row in the active table\r
- > Remove           Deletes a row from the active table\r
- > Table            Selects the currently active table\r
- > Screen           Displays the next page of the form\r
- > Current          Displays the current row of the active table\r
- > Master           Selects the master table of the currently active table\r
- > Detail           Selects a detail table of the currently active table\r
- > Output           Sends a form or report to an output destination\r
- > Exit             Returns to the Perform Menu\r
-
-\r
-PROCEDURE:\r
-\r
-Enter the first letter of the menu option you want:  q for Query, n for Next,\r
-p for Previous, v for View, a for Add, u for Update, r for Remove, t for Table,\r
-s for Screen, c for Current, m for Master, d for Detail, o for Output, or\r
-e for Exit.\r
-\r
-Use the Next and Previous options to view the next or previous row in the\r
-Current List.  First use the Query option to generate a Current List (a list of\r
-all the rows that satisfy your query).  If there is more than one row in the\r
-Current List, you can select the Next option to look at the next row.  After\r
-you use Next, you can use the Previous option to look at the previous row.\r
-\r
-On OnLine systems, use the View option to display the contents of TEXT and\r
-BYTE fields using the external programs specified in the PROGRAM attributes\r
-or a default system editor for TEXT fields. BYTE fields cannot be displayed\r
-unless the PROGRAM attribute is present.\r
-\r
-Use the Screen option to view other pages of your form.  If you have only one\r
-page, the Screen option will not do anything.  If you have more than one page,\r
-the Screen option will display the next page.  The \"Page x of y\" line on the\r
-fourth line of the screen tells you how many pages you have and which one you\r
-are looking at now.  When you reach the last page of the form, select the\r
-Screen option to cycle back to the first page.\r
-
-Use the Exit option to leave the PERFORM Menu and return to the Perform Menu.\r
-After you select the Exit option, Perform displays the Perform Menu.\r
-\r
-\r
-QUIT:\r
-\r
-Select the Exit option to leave the PERFORM Menu and return to the FORM Menu.\r
-\r
-\r
-\r
-NOTES:\r
-\r
-You cannot select Update, Next, Previous, or Remove until you have generated a\r
-Current List with Query.\r
-",
-
-    field => "FIELD EDITING CONTROL KEYS:\r
-CTRL X    :  Deletes a character\r
-CTRL A    :  Toggles in and out of character insertion mode\r
-CTRL D    :  Clears to the end of the field\r
-left      :  Backspace\r
-right     :  Forward space\r
-up        :  Traverse backwards through the fields\r
-CTRL F    :  'Fast-forward' through the fields\r
-CTRL B    :  'Fast-reverse' through the fields\r
-CTRL W    :  Display help message\r
-CR        :  Next field\r
-CTRL I    :  Next field\r
-down      :  Next field\r
-!         :  Invokes the BLOB editor if in a BLOB field.\r
-ESC       :  Entry Complete\r
-CTRL C    :  Abort Command\r
-\r
-\r
-QUERY COMPARISON SYMBOLS:\r
-<     Less than                 <=    Less than or equal\r
->     Greater than              >=    Greater than or equal\r
-=     Equal                     <>    Not equal\r
->>    Last value (only for indexed columns, without other comparisons)\r
-<<    First value (same conditions as last value)\r
-:     Range  (inclusive)\r
-|     OR condition\r
-The colon for range comparison is typed between the desired range values\r
-The pipe symbol for OR separates the different possibilities\r
-      All other symbols are typed in front of the column value\r
-An asterisk (*) is used for wild card comparison of character columns\r
-A blank field means don't care\r
-      To match for a blank character field, use the equality symbol\r
-\r
-\r
-"
-);
+our @Help_screens = @$msgs[0..1];
 
 # When the user hits ESC from the subform, run one of the following
 # based on the value of the button set.
 #use vars '%MODESUBS';
-
-our %Modesubs = (
-    query  => \&DBIx::Perform::do_query,
-    add    => \&DBIx::Perform::do_add,
-    update => \&DBIx::Perform::do_update,
-);
 
 our %Form = (
     TABORDER => [ 'ModeButtons', 'DBForm' ],
@@ -338,14 +168,15 @@ our %Form = (
             FOCUSSWITCH => "\t\n",
             OnExit      => \&button_push,
             OnEntry     => \&button_push,
-            LABELS      => @Button_labels,
+            LABELS      => \@Button_labels,
+            NAMES       => \@Button_names,
             VALUE       => 0,
         },
         InfoMsg => {
             TYPE    => 'Label',
             COLUMNS => $INFOMSG_SIZE,
             LINES   => 1,
-            VALUE   => 'Searches the active database table.',
+            VALUE   => $msgs->[23],     #'query' translated to $LANG
             BORDER  => 0,
             X       => $INFOMSG_START,
             Y       => 1,
@@ -369,7 +200,7 @@ our %Form = (
             Y       => 1,
         },
         Comment => {
-            TYPE    => 'Label',
+            TYPE    => 'TextField',
             COLUMNS => $MAXX,
             LINES   => 1,
             VALUE   => '',
@@ -392,6 +223,12 @@ our %Form = (
     },
 );
 
+our %Modesubs = (
+    query  => \&DBIx::Perform::do_query,
+    add    => \&DBIx::Perform::do_add,
+    update => \&DBIx::Perform::do_update,
+);
+
 our %App = (
     FOREGROUND        => 'white',
     BACKGROUND        => 'black',
@@ -410,6 +247,28 @@ our %App = (
 # UserInterface ctor
 sub new {
     my $class = shift;
+
+    {
+	my $i = 23;
+	foreach my $k (
+    	qw( query next previous view add update remove table screen
+	    current master detail output exit yes no)
+  	)
+	{
+	    $Info_messages{$k} = @$msgs[$i];
+	    $i++;
+	}
+	foreach my $k (
+    	qw( no41. th26d th15. no47. no48. db16e er11d no16. da11r
+            se09. se10. se11. no11d 1_8d  ro7d  ro7d2 ro6d  ro8d
+            no14d ro10d ad21e fa39e th44s th47w ro54. so34. so35.
+            th55e in61e th41. )
+  	)
+	{
+            $Runtime_error_messages{$k} = @$msgs[$i];
+	    $i++;
+	}
+    }
 
     bless my $self = {
         file_hash         => undef,    # may not need this
@@ -436,8 +295,8 @@ sub new {
         button_messages => \%Button_messages,
         error_messages  => \%Runtime_error_messages,
         info_messages   => \%Info_messages,
-        button_labels   => @Button_labels,
-        buttons_yn      => @Buttons_yn,
+        button_labels   => \@Button_labels,
+        buttons_yn      => \@Buttons_yn,
     } => ( ref $class || $class );
 
     return $self;
@@ -763,7 +622,7 @@ sub capture_file_data    # previously cursese_formdefs
 sub display_help_screen {
     my $self    = shift;
     my $textkey = shift;
-    my $text    = $Help_screens{$textkey};
+    my $text    = $Help_screens[$textkey];
     my $app     = $self->{app_object};
     my ( $maxy, $maxx ) = $app->maxyx();
     my $y = $maxy - 2;
@@ -774,7 +633,7 @@ sub display_help_screen {
     print STDERR "\n" x ($maxy+$maxy);
     $text .= "\n" x $y;
     do {
-        print STDERR "\n\n";
+        print STDERR "\r\n\n";
         $text =~ s/(([^\n]*\n){$y})//;
         my $scr_of_text = $1;
         if ($text =~ /[^\n]/) {
@@ -1015,50 +874,56 @@ sub register_button_handler {
     my $bhandler = $self->{button_handlers}->{$button} = $handler;
 }
 
+sub update_text {
+    my $form = shift;
+    my $GlobalUi    = $DBIx::Perform::GlobalUi;
+    my $wid         = $form->getWidget('ModeButtons');
+    my $val         = $wid->getField('VALUE');
+    my $names       = $wid->getField('NAMES');
+#    my $labels      = $wid->getField('LABELS');
+    my $thisname    = lc( $$names[$val] );
+#    my $thislabel   = lc( $$labels[$val] );
+    my $btn_handler = $Button_handlers{$thisname};
+
+    $GlobalUi->display_comment("");
+    $GlobalUi->clear_display_error;
+    my $m   = $Info_messages{$thisname};
+    my $wmm = $form->getWidget('InfoMsg');
+    $wmm->setField( 'VALUE', $m );
+    $wmm->setField( 'COLUMNS', length $m );
+    return $btn_handler;
+}
+
 sub button_push {
     my $form = shift;
     my $key  = shift;
 
     my $GlobalUi    = $DBIx::Perform::GlobalUi;
     my $app         = $Global_app_ref;                   # sorry
-    my $wid         = $form->getWidget('ModeButtons');
-    my $val         = $wid->getField('VALUE');
-    my $labels      = $wid->getField('LABELS');
-    my $thislabel   = lc( $$labels[$val] );
-    my $btn_handler = $Button_handlers{$thislabel};
-    my %messages    = %Info_messages;
 
     warn "TRACE: entering button_push\n" if $::TRACE;
     if ( $key eq KEY_RIGHT || $key eq KEY_LEFT || $key eq ' '
          || $key eq KEY_UP || $key eq KEY_DOWN ) {
         $form->setField( 'DONTSWITCH', 1 );
-        $GlobalUi->display_comment("");
-        $GlobalUi->clear_display_error;
-
-        my $m   = $messages{$thislabel};
-        my $wmm = $form->getWidget('InfoMsg');
-        $wmm->setField( 'VALUE', $m );
-        $wmm->setField( 'COLUMNS', length $m );
+        update_text($form);
+	return;
     }
     elsif ( $key =~ /\d/ ) {
         warn "TRACE: button_push, number key\n" if $::TRACE;
         $app->{'number'} *= 10;
         $app->{'number'} += $key;
         $form->setField( 'DONTSWITCH', 1 );
+	return;
     }
     elsif ( $key eq "\cw" ) {
-        $GlobalUi->display_help_screen('top');
+        $GlobalUi->display_help_screen(0);
         $form->setField( 'DONTSWITCH', 1 );
+	return;
     }
-    elsif ( $btn_handler && ref($btn_handler) eq 'CODE' ) {
-        if ( $btn_handler && ref($btn_handler) eq 'CODE' ) {
-            &$btn_handler( lc($key), $form );
-            $app->{'number'} = 0;
-        }
-        else {
-            print STDERR "No button sub for '$thislabel'\n";
-            $form->setField( 'DONTSWITCH', 1 );
-        }
+    my $btn_handler = update_text($form);
+    if ( $btn_handler && ref($btn_handler) eq 'CODE' ) {
+        &$btn_handler( lc($key), $form );
+        $app->{'number'} = 0;
     }
     warn "TRACE: leaving button_push\n" if $::TRACE;
 }
@@ -1076,6 +941,7 @@ sub change_buttons_to_label {
     $wid->setField( 'COLUMNS', 0 );
 
     $wid = $form->getWidget('ModeLabel');
+    $str = substr($str, 0, 70);
     $wid->setField( 'VALUE',   $str );
     $wid->setField( 'COLUMNS', length $str );
 
@@ -1095,10 +961,7 @@ sub change_label_to_buttons {
     $wid->setField( 'VALUE',   '' );
     $wid->setField( 'COLUMNS', 0 );
 
-    $wid = $form->getWidget('ModeButtons');
-    $wid->setField( 'LABELS', $self->{button_labels} );
-
-    $self->change_modename('perform');
+    $self->change_modename($msgs->[2]); #msgs->[2]='perform' if LANG=en 
     warn "leaving change_label_to_buttons\n" if $::TRACE;
     return undef;
 }
@@ -1106,19 +969,18 @@ sub change_label_to_buttons {
 sub switch_buttons {
     my $self = shift;
     my $form = shift;
-    my $str  = shift;
-    my $aref = shift;
 
     warn "entering switch_buttons\n" if $::TRACE;
 
     my $wid    = $form->getWidget('ModeButtons');
-    my $labels = $wid->getField('LABELS');
 
-    $wid->setField( 'LABELS', $aref );
-    $self->change_modename($str);
+    $wid->setField( 'NAMES', \@Button_yn_names );
+    $wid->setField( 'LABELS', \@Buttons_yn );
+    $self->change_modename( $msgs->[9] );  # 9 = 'remove'
 
+    $wid  = $form->getWidget('InfoMsg');
+    $wid->setField( 'VALUE', $msgs->[37] );  
     warn "leaving switch_buttons\n" if $::TRACE;
-    return undef;
 }
 
 sub change_modename {
@@ -1142,6 +1004,7 @@ sub change_modename {
 }
 
 sub update_info_message {
+    return;
     my $self    = shift;
     my $form    = shift;
     my $message = shift;
@@ -1604,47 +1467,24 @@ sub change_mode_display {
     if ( $mode eq 'perform' )    # switching back to main form
     {
         $form->setField( 'EXIT', 1 );
-        $self->change_modename($mode);
+        $self->change_modename($msgs->[2]);
         $self->change_label_to_buttons( $form, $mode );
         warn "leaving change_mode_display\n" if $::TRACE;
         return undef;
     }
     $form->setField( 'DONTSWITCH', 0 );
-    my $str = ${ $self->{button_messages}->{$mode} };
+    my $str =  $self->{button_messages}->{$mode};
+    my %translate_mode = ( query => 0, add => 4, update => 5 );
+    my $i = $translate_mode{$mode} + 3;
+    my $m = substr($msgs->[$i], 0, 8);
 
-    $self->change_modename($mode);
+    $self->change_modename($m);
     $self->change_buttons_to_label($str);
 
     warn "leaving change_mode_display\n" if $::TRACE;
     return undef;
 }
 
-# FIX make iterative
-sub button_to_index {
-    my $self   = shift;
-    my $button = shift;
-
-    if ( !defined($button) ) { return undef; }
-
-    if    ( $button eq 'query' )    { return 0; }
-    elsif ( $button eq 'next' )     { return 1; }
-    elsif ( $button eq 'previous' ) { return 2; }
-    elsif ( $button eq 'view' )     { return 3; }
-    elsif ( $button eq 'add' )      { return 4; }
-    elsif ( $button eq 'update' )   { return 5; }
-    elsif ( $button eq 'remove' )   { return 6; }
-    elsif ( $button eq 'table' )    { return 7; }
-    elsif ( $button eq 'screen' )   { return 8; }
-    elsif ( $button eq 'current' )  { return 0; }
-    elsif ( $button eq 'master' )   { return 1; }
-    elsif ( $button eq 'detail' )   { return 2; }
-    elsif ( $button eq 'output' )   { return 3; }
-    elsif ( $button eq 'exit' )     { return 4; }
-
-    return undef;
-}
-
-# incomplete - change the focus to a specific button
 sub change_focus_to_button {
     my $self   = shift;
     my $form   = shift;
@@ -1661,10 +1501,13 @@ sub change_focus_to_button {
 
     $self->change_mode_display( $form, $button );
 
-    # LATER - allow user to determine the button to set focus on
-    #my $index = $self->button_to_index( $button );
-    #my $wid = $form->getWidget('ModeButtons');
-    #$wid->setField('VALUE', $index );
+    my $wid = $form->getWidget('ModeButtons');
+    $wid->setField( 'LABELS', $self->{button_labels} );
+    $wid->setField( 'NAMES', \@Button_names );
+
+    $wid = $form->getWidget('InfoMsg');
+    my $m = $self->{info_messages}->{remove};
+    $wid->setField('VALUE', $m );
 
     warn "leaving change_focus_to_button\n" if $::TRACE;
     return undef;

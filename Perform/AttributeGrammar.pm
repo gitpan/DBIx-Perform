@@ -5,7 +5,7 @@ use Parse::RecDescent;
 use base 'Exporter';
 use Data::Dumper;
 
-our $VERSION = '0.694';
+our $VERSION = '0.695';
 
 # exported methods
 our @EXPORT_OK = qw( &get_grammar );
@@ -32,6 +32,7 @@ our $grammar = <<'_EOGRAMMAR_';
    NAME_STRING     : /\w+/i    # Limited complexity strings for names
    GENERIC_STRING  : /[\.a-zA-Z0-9\*\-\_\(\)\$\/\[\]\#\@\&\!\+\=\%\>\<\,\;\:\ \'\\]*/i
    QSTRING         : /"((^|[^\\])(\\\\)*\\"|[^"])*"/
+   BSTRING         : /[^"),\s][^),\s]*/
    FORMAT_STRING   : /[\#\.\/\-\$\&mdyMDY]*/i
 
    empty_tag : ''
@@ -110,49 +111,29 @@ our $grammar = <<'_EOGRAMMAR_';
              | /DATE/i
              | /INTERVAL/i
 
-   string_list : QSTRING ","  string_list
-               {
-		 $item{QSTRING} =~ /^"(.*)"$/;
-                 $::res->{INCLUDE_VALUES} .= $1 . ' ';
-               }
-               | QSTRING
+   include_string : QSTRING
                {
 		  $item{QSTRING} =~ /^"(.*)"$/;
-                  $::res->{INCLUDE_VALUES} = $1 . ' ';
+                  $::res->{INCLUDE_VALUES}->{$1} = 1;
                }
 
-   alphanum_list : ALPHANUM ","  alphanum_list
-                 {
-                    $::res->{INCLUDE_VALUES} .= $item{ALPHANUM} . " ";
-                 }
-                 | ALPHANUM
-                 {
-                    $::res->{INCLUDE_VALUES} = $item{ALPHANUM} . " ";
-                 }
+   range_floor   : QSTRING
+                 | BSTRING
 
-   range_floor   : numeric_value
-
-   range_ceiling : numeric_value
+   range_ceiling  : QSTRING
+                  | BSTRING
 
    subscript_floor : numeric_value
 
    subscript_ceiling : numeric_value
 
-   include_list  : string_list
-                 | alphanum_list
-
    null_rule : /(,\s*)?NULL(\s*,)?/i   { $::res->{INCLUDE_NULL_OK} = 1; }
              |
 
-#   null_rule : "," /NULL/i      { $::res->{INCLUDE_NULL_OK} = 1; }
-#             |     /^NULL$/i ","  { $::res->{INCLUDE_NULL_OK} = 1; }
-#             |     /^NULL$/i   { $::res->{INCLUDE_NULL_OK} = 1; }
-#             |
-
    range_statement : null_rule range_floor /TO/i range_ceiling null_rule
                    {
-                     $::res->{RANGE_CEILING} = $item{range_ceiling}; 
-                     $::res->{RANGE_FLOOR}   = $item{range_floor};
+                       $::res->{RANGE}->{$item{range_floor}}
+                         = $item{range_ceiling};
                    }
 
    comment_spec : "," /COMMENTS/i "=" QSTRING
@@ -178,9 +159,13 @@ our $grammar = <<'_EOGRAMMAR_';
                   $::res->{FORMAT} = uc $item{FORMAT_STRING};
                }
 
-   include_spec : "," /INCLUDE/i "=" "(" range_statement ")" 
-                | "," /INCLUDE/i "=" "(" alphanum_list ")"
-                | "," /INCLUDE/i "=" "(" string_list ")" 
+   include_item  : range_statement
+                 | include_string
+
+   include_list  : include_item "," include_list
+                 | include_item
+
+   include_spec : "," /INCLUDE/i "=" "(" include_list ")" 
 
    joining_spec : /JOINING/i join_table "." join_column
                 {

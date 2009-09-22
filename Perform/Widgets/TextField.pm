@@ -10,7 +10,7 @@ use constant 'KEY_DEL' => '330';    # dunno why not in Curses.
 
 use 5.6.0;
 
-our $VERSION = '0.694';
+our $VERSION = '0.695';
 
 Curses::define_key( "\c[[Z", KEY_STAB );    # for some reason not recognized.
 
@@ -102,22 +102,6 @@ sub input_key {
 
     $max   = 80;
     $max   = $fo->{size} if $mode ne 'query';
-#    $value = $fo->get_value;
-
-#    # reinitialize the field if re-entering it with a value at pos 0
-#    if (
-#           $pos == 0
-#        && $value ne ''
-#        && (   defined $fo->{format}
-#            || defined $fo->{right}
-#            || defined $fo->{picture} )
-#      )
-#    {
-#        if ( !defined $self->is_FSKEY($in) ) {
-#            $fo->set_value('');
-#            $value = '';
-#        }
-#    }
 
     if (defined $fo->{picture}) {
         my ($pic, $rc) = $fo->do_picture('');
@@ -316,10 +300,15 @@ sub execute {
             }
             $self->input_key($key);
         }
+        my $value = $$conf{VALUE};
+        if (length($value) > $$conf{COLUMNS}) {
+            $$conf{'EXIT'} = 1;
+            last;
+        }
         $self->draw( $mwh, 1 );
     }
 
-    $$conf{CURSORPOS} = 0;
+#    $$conf{CURSORPOS} = 0; # removed so 'overflow' field can get cursor pos
     warn "TRACE: leaving Curses::Widgets::execute\n" if $::TRACE;
     return $key;
 }
@@ -416,7 +405,7 @@ sub _onExit {
 #        $GlobalUi->display_error('er11d');
 #        return ( $value, $pos, -1 );
 #    }
-    my $rc;
+
     ($value, $rc) = $fo->format_value_for_display( $value ) if $mode !~ /^q/i;
     $GlobalUi->set_screen_value( $tag, $value);
     return $rc;
